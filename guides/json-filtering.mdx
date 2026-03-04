@@ -1,0 +1,718 @@
+---
+title: JSON Filtering
+description: Filter JSON and JSONB columns in PostgreSQL with @QFJsonElement annotation
+---
+
+## Overview
+
+QueryFilterJPA provides specialized support for filtering JSON and JSONB columns in PostgreSQL. Using the `@QFJsonElement` annotation, you can filter by JSON structure and values, enabling powerful queries on semi-structured data.
+
+<Note>
+This feature is specifically designed for PostgreSQL JSON and JSONB types. Ensure your database and Hibernate configuration support JSON operations.
+</Note>
+
+## What is JSON Filtering?
+
+JSON filtering allows you to query JSON/JSONB columns based on their structure and content:
+
+```sql
+-- Traditional approach: Complex SQL
+SELECT * FROM models 
+WHERE jsonb_data @> '{"key": "value"}'::jsonb;
+
+-- With QueryFilterJPA: Simple query parameter
+GET /models?jsonb=eq:{'key':'value'}
+```
+
+## Setting Up JSON Filtering
+
+### Entity Definition
+
+Define your entity with JSON/JSONB columns:
+
+```java
+import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
+import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+import java.util.Map;
+
+@Entity
+@Table(name = "models")
+public class ModelJson {
+    
+    @Id
+    private String id;
+    
+    private String name;
+    
+    // JSONB column
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, String> jsonbData;
+    
+    // JSON column (if needed)
+    @Type(JsonType.class)
+    @Column(columnDefinition = "json")
+    private Map<String, String> jsonData;
+    
+    // Constructors, getters, setters
+}
+```
+
+<Note>
+This example uses the `hibernate-types` library for JSON support:
+
+```xml
+<dependency>
+    <groupId>io.hypersistence</groupId>
+    <artifactId>hypersistence-utils-hibernate-63</artifactId>
+    <version>3.7.0</version>
+</dependency>
+```
+</Note>
+
+### Filter Definition
+
+Create a filter using `@QFJsonElement`:
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(ModelJson.class)
+public class JsonFilterDef {
+    
+    // Filter by JSONB column
+    @QFJsonElement("jsonbData")
+    private String jsonb;
+    
+    // Filter by JSON column
+    @QFJsonElement("jsonData")
+    private String json;
+}
+```
+
+## JSON Operations
+
+The `@QFJsonElement` annotation supports specialized JSON operations:
+
+| Operation | Syntax | Description | Example |
+|-----------|--------|-------------|----------|
+| Equal | `eq` | JSON contains exactly these key-value pairs | `jsonb=eq:{'key':'value'}` |
+| Not Equal | `ne` | JSON doesn't contain exactly these pairs | `jsonb=ne:{'key':'value'}` |
+
+<Note>
+JSON filtering uses containment operations. The filter checks if the database JSON **contains** the specified key-value pairs, not exact equality.
+</Note>
+
+## Basic Usage
+
+### Simple Key-Value Match
+
+```bash
+# Find models where JSON contains {"status": "active"}
+GET /models?jsonb=eq:{'status':'active'}
+```
+
+**Database data:**
+```json
+// Matches
+{"status": "active"}  ✓
+{"status": "active", "type": "premium"}  ✓
+{"status": "active", "count": 10, "tags": ["new"]}  ✓
+
+// Doesn't match
+{"status": "inactive"}  ✗
+{"type": "premium"}  ✗ (missing status key)
+{"Status": "active"}  ✗ (case-sensitive)
+```
+
+### Multiple Key-Value Pairs
+
+```bash
+# Find models where JSON contains BOTH key-value pairs
+GET /models?jsonb=eq:{'status':'active','type':'premium'}
+```
+
+**Database data:**
+```json
+// Matches (contains both)
+{"status": "active", "type": "premium"}  ✓
+{"status": "active", "type": "premium", "count": 5}  ✓
+
+// Doesn't match
+{"status": "active"}  ✗ (missing type)
+{"type": "premium"}  ✗ (missing status)
+{"status": "active", "type": "basic"}  ✗ (wrong type value)
+```
+
+## Complete Example
+
+### Entity
+
+```java
+import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
+import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+import java.util.Map;
+
+@Entity
+@Table(name = "products")
+public class Product {
+    
+    @Id
+    private Long id;
+    
+    private String name;
+    private BigDecimal price;
+    
+    // JSONB for product metadata
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Object> metadata;
+    
+    // JSONB for product attributes
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, String> attributes;
+    
+    // getters and setters
+}
+```
+
+### Filter Definition
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+import io.github.acoboh.query.filter.jpa.operations.QFOperationJsonEnum;
+
+@QFDefinitionClass(Product.class)
+public class ProductFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("price")
+    private BigDecimal price;
+    
+    // Filter by metadata JSON
+    @QFJsonElement("metadata")
+    private String metadata;
+    
+    // Filter by attributes JSON with default
+    @QFJsonElement(
+        value = "attributes",
+        defaultValue = "{'featured':'true'}",
+        defaultOperation = QFOperationJsonEnum.EQUAL
+    )
+    private String attributes;
+}
+```
+
+### Controller
+
+```java
+@RestController
+@RequestMapping("/products")
+public class ProductController {
+    
+    @Autowired
+    private ProductRepository repository;
+    
+    @GetMapping
+    public List<ProductDTO> getProducts(
+        @QFMultiParam(ProductFilterDef.class) QueryFilter<Product> filter
+    ) {
+        return repository.findAll(filter)
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+}
+```
+
+### Usage Examples
+
+<Tabs>
+  <Tab title="Basic Search">
+    ```bash
+    # Find products with specific brand
+    GET /products?metadata=eq:{'brand':'Apple'}
+    ```
+  </Tab>
+  <Tab title="Multiple Attributes">
+    ```bash
+    # Find products with specific color and size
+    GET /products?attributes=eq:{'color':'red','size':'large'}
+    ```
+  </Tab>
+  <Tab title="Combined Filters">
+    ```bash
+    # Products under $100 with specific attributes
+    GET /products?price=lt:100&metadata=eq:{'brand':'Samsung','warranty':'2-year'}
+    ```
+  </Tab>
+  <Tab title="With Regular Filters">
+    ```bash
+    # Search by name and JSON attributes
+    GET /products?name=like:Phone&attributes=eq:{'color':'black'}
+    ```
+  </Tab>
+</Tabs>
+
+## JSON Syntax
+
+### Single Quotes for JSON
+
+Use single quotes for JSON in query parameters:
+
+```bash
+# Correct: Single quotes for JSON keys and values
+GET /models?jsonb=eq:{'status':'active','type':'premium'}
+
+# URL encoded version
+GET /models?jsonb=eq:%7B%27status%27%3A%27active%27%7D
+```
+
+### Nested JSON Values
+
+```bash
+# Simple nested structure
+GET /models?jsonb=eq:{'user':{'role':'admin'}}
+
+# Multiple nested keys
+GET /models?jsonb=eq:{'config':{'theme':'dark','language':'en'}}
+```
+
+### Special Characters
+
+Ensure proper URL encoding for special characters:
+
+```bash
+# Spaces, special chars need encoding
+GET /products?metadata=eq:{'description':'High quality'}
+# Encoded:
+GET /products?metadata=eq:%7B%27description%27%3A%27High%20quality%27%7D
+```
+
+## Default Values
+
+You can set default JSON filters:
+
+```java
+@QFJsonElement(
+    value = "metadata",
+    defaultValue = "{'featured':'true','visible':'true'}",
+    defaultOperation = QFOperationJsonEnum.EQUAL
+)
+private String metadata;
+```
+
+When no filter is provided:
+
+```bash
+# No metadata filter specified
+GET /products?name=like:Phone
+
+# Automatically applies:
+# WHERE metadata @> '{"featured":"true","visible":"true"}'
+```
+
+## Programmatic JSON Filtering
+
+### Building JSON Filters
+
+```java
+@Service
+public class ProductService {
+    
+    @Autowired
+    private QFProcessor<ProductFilterDef, Product> processor;
+    
+    @Autowired
+    private ProductRepository repository;
+    
+    public List<Product> findByMetadata(Map<String, String> metadata) {
+        // Convert map to JSON string
+        String jsonStr = toJsonString(metadata);
+        
+        QueryFilter<Product> filter = processor.newQueryFilter(
+            String.format("metadata=eq:%s", jsonStr),
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+    
+    private String toJsonString(Map<String, String> map) {
+        return map.entrySet().stream()
+            .map(e -> String.format("'%s':'%s'", e.getKey(), e.getValue()))
+            .collect(Collectors.joining(",", "{", "}"));
+    }
+}
+```
+
+### Reading JSON Filter Values
+
+```java
+QueryFilter<Product> filter = processor.newQueryFilter(
+    "metadata=eq:{'brand':'Apple','warranty':'2-year'}",
+    QFParamType.RHS_COLON
+);
+
+// Get actual JSON value
+Map<String, String> actualValue = filter.getActualJsonValue("metadata");
+// Returns: {"brand": "Apple", "warranty": "2-year"}
+
+// Get operation and value
+Pair<QFOperationJsonEnum, Map<String, String>> pair = 
+    filter.getFirstActualJsonOperation("metadata");
+QFOperationJsonEnum operation = pair.getFirst();  // EQUAL
+Map<String, String> value = pair.getSecond();      // {"brand": "Apple", ...}
+
+// Get all operations (for multiple filters on same field)
+List<Pair<QFOperationJsonEnum, Map<String, String>>> operations = 
+    filter.getActualJsonOperation("metadata");
+```
+
+## Advanced Use Cases
+
+### Product Catalog Filtering
+
+```java
+@QFDefinitionClass(Product.class)
+public class ProductCatalogFilterDef {
+    
+    @QFElement("category")
+    private String category;
+    
+    @QFElement("price")
+    private BigDecimal price;
+    
+    // Filter by product specifications
+    @QFJsonElement("specifications")
+    private String specifications;
+    
+    // Filter by feature flags
+    @QFJsonElement("features")
+    private String features;
+}
+```
+
+Usage:
+
+```bash
+# Find laptops with specific specs
+GET /products?category=eq:Laptops&specifications=eq:{'ram':'16GB','storage':'512GB'}
+
+# Find products with certain features
+GET /products?features=eq:{'bluetooth':'true','waterproof':'true'}
+
+# Combine multiple filters
+GET /products?price=lt:1000&specifications=eq:{'brand':'Dell'}&features=eq:{'touchscreen':'true'}
+```
+
+### User Preferences
+
+```java
+@Entity
+public class UserProfile {
+    @Id
+    private Long id;
+    
+    private String username;
+    
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Object> preferences;
+}
+
+@QFDefinitionClass(UserProfile.class)
+public class UserFilterDef {
+    
+    @QFElement("username")
+    private String username;
+    
+    @QFJsonElement("preferences")
+    private String preferences;
+}
+```
+
+```bash
+# Find users with dark theme preference
+GET /users?preferences=eq:{'theme':'dark'}
+
+# Find users with specific notification settings
+GET /users?preferences=eq:{'notifications':'enabled','email':'daily'}
+```
+
+### Configuration Management
+
+```java
+@Entity
+public class ApplicationConfig {
+    @Id
+    private String id;
+    
+    private String environment;
+    
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, String> settings;
+}
+```
+
+```bash
+# Find production configs with specific settings
+GET /configs?environment=eq:production&settings=eq:{'cache':'enabled','logging':'info'}
+```
+
+## Performance Considerations
+
+### GIN Indexes
+
+Create GIN indexes on JSONB columns for better performance:
+
+```sql
+-- Create GIN index
+CREATE INDEX idx_metadata_gin ON products USING GIN (metadata);
+
+-- Create GIN index with jsonb_path_ops (faster, but only for containment)
+CREATE INDEX idx_metadata_gin_path ON products USING GIN (metadata jsonb_path_ops);
+```
+
+### JPA Index Annotation
+
+While Hibernate doesn't directly support GIN indexes, document the need:
+
+```java
+@Entity
+@Table(
+    name = "products",
+    indexes = {
+        // Note: Create GIN index via migration script
+        // CREATE INDEX idx_metadata_gin ON products USING GIN (metadata);
+    }
+)
+public class Product {
+    // ...
+}
+```
+
+### Query Optimization
+
+<Steps>
+
+1. **Use specific keys**: More specific JSON queries perform better
+   ```bash
+   # Better: Specific keys
+   GET /products?metadata=eq:{'brand':'Apple','model':'iPhone'}
+   
+   # Slower: Generic keys
+   GET /products?metadata=eq:{'data':'something'}
+   ```
+
+2. **Combine with regular filters**: Reduce result set first
+   ```bash
+   # Good: Filter by indexed column first
+   GET /products?category=eq:Electronics&metadata=eq:{'brand':'Apple'}
+   ```
+
+3. **Limit JSON size**: Smaller JSON values query faster
+
+</Steps>
+
+## Best Practices
+
+<Steps>
+
+### Use JSONB over JSON
+
+```java
+// Preferred: JSONB (faster queries, supports indexing)
+@Type(JsonBinaryType.class)
+@Column(columnDefinition = "jsonb")
+private Map<String, String> data;
+
+// Avoid: JSON (slower, limited indexing)
+@Type(JsonType.class)
+@Column(columnDefinition = "json")
+private Map<String, String> data;
+```
+
+### Validate JSON Structure
+
+```java
+@Service
+public class ProductService {
+    
+    public List<Product> findByMetadata(String jsonFilter) {
+        // Validate JSON syntax
+        if (!isValidJson(jsonFilter)) {
+            throw new IllegalArgumentException("Invalid JSON format");
+        }
+        
+        QueryFilter<Product> filter = processor.newQueryFilter(
+            "metadata=eq:" + jsonFilter,
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+    
+    private boolean isValidJson(String json) {
+        try {
+            objectMapper.readTree(json);
+            return true;
+        } catch (JsonProcessingException e) {
+            return false;
+        }
+    }
+}
+```
+
+### Document JSON Schema
+
+```java
+/**
+ * Product metadata JSON structure:
+ * {
+ *   "brand": "string",
+ *   "model": "string",
+ *   "warranty": "string",
+ *   "features": ["string"],
+ *   "specifications": {
+ *     "weight": "string",
+ *     "dimensions": "string"
+ *   }
+ * }
+ */
+@QFJsonElement("metadata")
+private String metadata;
+```
+
+### Limit JSON Complexity
+
+```java
+// Good: Simple, flat structure
+{"brand": "Apple", "model": "iPhone 15", "color": "black"}
+
+// Avoid: Deeply nested, complex structures
+{
+  "device": {
+    "manufacturer": {
+      "name": "Apple",
+      "country": {"code": "US", "name": "United States"}
+    },
+    "specs": {...}
+  }
+}
+```
+
+</Steps>
+
+## Testing JSON Filters
+
+```java
+@SpringBootTest
+class JsonFilterTest {
+    
+    @Autowired
+    private QFProcessor<ProductFilterDef, Product> processor;
+    
+    @Autowired
+    private ProductRepository repository;
+    
+    @Test
+    void testJsonContainmentFilter() {
+        // Setup test data
+        Map<String, String> metadata1 = Map.of(
+            "brand", "Apple",
+            "warranty", "2-year"
+        );
+        Product product1 = createProduct(metadata: metadata1);
+        
+        Map<String, String> metadata2 = Map.of(
+            "brand", "Samsung",
+            "warranty", "1-year"
+        );
+        Product product2 = createProduct(metadata: metadata2);
+        
+        repository.saveAll(List.of(product1, product2));
+        
+        // Test JSON filter
+        QueryFilter<Product> filter = processor.newQueryFilter(
+            "metadata=eq:{'brand':'Apple'}",
+            QFParamType.RHS_COLON
+        );
+        
+        List<Product> results = repository.findAll(filter);
+        
+        assertThat(results)
+            .hasSize(1)
+            .containsExactly(product1);
+        
+        // Verify actual JSON value
+        Map<String, String> actualValue = filter.getActualJsonValue("metadata");
+        assertThat(actualValue).containsEntry("brand", "Apple");
+    }
+    
+    @Test
+    void testDefaultJsonValue() {
+        // Filter definition has default value
+        QueryFilter<Product> filter = processor.newQueryFilter(
+            null,  // No filter provided
+            QFParamType.RHS_COLON
+        );
+        
+        // Should apply default: {'featured':'true'}
+        assertThat(filter.isFiltering("attributes")).isTrue();
+        
+        Map<String, String> defaultValue = filter.getActualJsonValue("attributes");
+        assertThat(defaultValue).containsEntry("featured", "true");
+    }
+}
+```
+
+## Limitations
+
+<Warning>
+- JSON filtering requires PostgreSQL with JSON/JSONB support
+- Only containment operations are supported (not structural queries)
+- Nested JSON filtering is limited to flat key-value containment
+- Performance depends on JSON size and index configuration
+- Case-sensitive key matching
+</Warning>
+
+## Common Pitfalls
+
+### Case Sensitivity
+
+```bash
+# These are DIFFERENT filters
+GET /models?jsonb=eq:{'status':'active'}   # lowercase 'status'
+GET /models?jsonb=eq:{'Status':'active'}   # uppercase 'Status'
+```
+
+### Containment vs Equality
+
+```bash
+# Filter: {'brand':'Apple'}
+# Matches: {'brand':'Apple', 'model':'iPhone'}  ✓
+# This is containment, not exact equality!
+```
+
+### URL Encoding
+
+```bash
+# Raw (might not work)
+GET /models?jsonb=eq:{'key':'value with spaces'}
+
+# Properly encoded
+GET /models?jsonb=eq:%7B%27key%27%3A%27value%20with%20spaces%27%7D
+```
+
+## Next Steps
+
+- Learn about [PostgreSQL Arrays](/guides/postgresql-arrays) for array operations
+- Explore [Custom Predicates](/guides/custom-predicates) to combine JSON filters
+- Check [Basic Filtering](/guides/basic-filtering) for standard operations

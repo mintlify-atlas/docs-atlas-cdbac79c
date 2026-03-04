@@ -1,0 +1,162 @@
+---
+title: OpenAPI Integration Overview
+description: Automatically generate Swagger/OpenAPI documentation for your QueryFilterJPA filters
+---
+
+QueryFilterJPA provides automatic OpenAPI documentation generation for your query filters. When you add the OpenAPI integration dependency, all endpoints using `@QFParam` or `@QFMultiParam` will automatically have their filter parameters documented in Swagger UI.
+
+## What OpenAPI Integration Provides
+
+The OpenAPI integration module enhances your API documentation by:
+
+- **Automatic parameter documentation**: Filter fields, operations, and types are automatically added to your OpenAPI specification
+- **Interactive testing**: Test filters directly from Swagger UI without manually constructing complex query strings
+- **Field metadata**: Displays available operations, data types, enum values, and sortable fields
+- **Zero configuration**: Works out-of-the-box with Spring Boot auto-configuration
+- **Support for both filter modes**: Automatically detects and documents `@QFParam` and `@QFMultiParam` endpoints differently
+
+## Installation
+
+<CodeGroup>
+
+```xml Spring Boot 4
+<dependency>
+    <groupId>io.github.acoboh</groupId>
+    <artifactId>query-filter-jpa-openapi-4</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+
+```xml Spring Boot 3
+<dependency>
+    <groupId>io.github.acoboh</groupId>
+    <artifactId>query-filter-jpa-openapi-3</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+
+</CodeGroup>
+
+<Note>
+  The OpenAPI integration requires SpringDoc OpenAPI to be present in your project. For Spring Boot 4, version 3.0.0 is used. For Spring Boot 3, version 2.8.14 is used.
+</Note>
+
+## How It Works
+
+The integration uses Spring Boot auto-configuration to automatically enhance your OpenAPI specification. When the application starts:
+
+1. **Discovery**: The `QueryFilterOpenApiAutoconfigurer` registers an `OpenApiCustomizer` bean
+2. **Analysis**: The customizer scans all controller endpoints for `@QFParam` and `@QFMultiParam` annotations
+3. **Enhancement**: Filter parameters are automatically enriched with detailed descriptions, including:
+   - Available filter fields
+   - Supported operations for each field
+   - Data types and enum values
+   - Sortable fields
+4. **Documentation**: The enhanced specification appears in your Swagger UI
+
+## Automatic Documentation Generation
+
+No manual configuration is required. Once you add the dependency, your filter endpoints are automatically documented.
+
+### For `@QFParam` Endpoints
+
+The integration adds a detailed description to the `filter` parameter showing:
+- Filter syntax type (RHS Colon or LHS Brackets)
+- All available filter fields
+- Operations supported by each field
+- Data types and constraints
+- Sortable fields
+
+**Example controller:**
+
+```java
+@GetMapping
+public Page<PostBlog> getPosts(
+    @QFParam(PostFilterDef.class) 
+    @RequestParam(required = false, defaultValue = "") 
+    QueryFilter<PostBlog> filter
+) {
+    return repository.findAll(filter);
+}
+```
+
+### For `@QFMultiParam` Endpoints
+
+The integration creates individual query parameters for each filter field, allowing you to:
+- See all available filters as separate parameters in Swagger UI
+- Test each filter independently
+- Use Swagger's built-in UI to construct complex queries
+
+**Example controller:**
+
+```java
+@GetMapping
+public Page<PostBlog> getPosts(
+    @QFMultiParam(PostFilterDef.class) QueryFilter<PostBlog> filter
+) {
+    return repository.findAll(filter);
+}
+```
+
+## Configuration Options
+
+The OpenAPI integration works with zero configuration, but you can customize the behavior using standard QueryFilterJPA annotations:
+
+### Filter Syntax Type
+
+By default, the documentation shows the syntax specified in the `@QFParam` or `@QFMultiParam` annotation:
+
+```java
+// Documents RHS Colon syntax (default)
+@QFParam(value = PostFilterDef.class, type = QFParamType.RHS_COLON)
+
+// Documents LHS Brackets syntax
+@QFParam(value = PostFilterDef.class, type = QFParamType.LHS_BRACKETS)
+```
+
+### Blocking Fields from Documentation
+
+Use `@QFBlockParsing` to exclude fields from the API documentation:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    @QFElement("published")
+    @QFBlockParsing  // Won't appear in Swagger UI
+    private boolean published;
+}
+```
+
+### Base64 Encoded Filters
+
+If you require base64-encoded filters, the documentation will automatically include a note:
+
+```java
+@QFParam(value = PostFilterDef.class, base64Encoded = true)
+```
+
+The generated documentation will include:
+> **Note**: The filter **must be base64** encoded
+
+## Field Type Detection
+
+The integration automatically detects and documents special field types:
+
+- **Enums**: Shows all possible enum values
+- **Dates**: Marks fields as date/time types
+- **Collections**: Identifies collection fields with array operations
+- **JSON fields**: Marks PostgreSQL JSON fields
+- **Discriminators**: Lists possible discriminator values
+- **Sortable fields**: Indicates which fields support sorting
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Swagger UI" icon="browser" href="/openapi/swagger-ui">
+    Learn how filters appear and how to test them in Swagger UI
+  </Card>
+  <Card title="Filter Definition" icon="code" href="/concepts/filter-definitions">
+    Define your filter classes with annotations
+  </Card>
+</CardGroup>

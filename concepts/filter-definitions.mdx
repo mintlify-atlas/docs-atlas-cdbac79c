@@ -1,0 +1,477 @@
+---
+title: Filter Definitions
+description: Learn how to define filter classes using annotations in QueryFilterJPA
+icon: filter
+---
+
+Filter definitions are Java classes that define which fields of your JPA entities can be filtered, sorted, and how they should behave. They act as a contract between your API and the underlying JPA entities.
+
+## @QFDefinitionClass
+
+The `@QFDefinitionClass` annotation marks a class as a filter definition and specifies which JPA entity it filters.
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    // Filter field definitions
+}
+```
+
+### Properties
+
+<ParamField path="value" type="Class<?>" required>
+  The JPA entity class to be filtered
+</ParamField>
+
+<ParamField path="sortable" type="boolean" default="true">
+  Globally enable or disable sorting for all fields in this filter. When set to `false`, no fields will be sortable regardless of individual field settings.
+</ParamField>
+
+<ParamField path="distinct" type="boolean" default="true">
+  Enable or disable the DISTINCT clause in the generated JPA query. This helps eliminate duplicate results when using joins.
+</ParamField>
+
+<ParamField path="defaultPredicate" type="String" default="">
+  Specify the name of a predicate to use by default. Leave empty if no default predicate is needed.
+</ParamField>
+
+<ParamField path="defaultSort" type="QFDefaultSort[]" default="{}">
+  Define default sorting options that will be applied when no explicit sorting is requested.
+
+  ```java
+  @QFDefinitionClass(
+      value = PostBlog.class,
+      defaultSort = {
+          @QFDefaultSort(value = "createDate", direction = Direction.DESC),
+          @QFDefaultSort(value = "title", direction = Direction.ASC)
+      }
+  )
+  ```
+</ParamField>
+
+## @QFElement
+
+The `@QFElement` annotation defines a filterable field in your filter definition class. This is the most commonly used annotation for defining filter fields.
+
+```java
+@QFElement("title")
+private String title;
+
+@QFElement(value = "author.name", name = "authorName")
+private String authorName;
+```
+
+### Basic Properties
+
+<ParamField path="value" type="String" required>
+  The path to the entity field. Supports nested properties using dot notation (e.g., `"author.name"`, `"category.parent.name"`).
+</ParamField>
+
+<ParamField path="name" type="String" default="">
+  The name to use in filter queries. If not specified, the field name of the filter definition is used.
+  
+  ```java
+  @QFElement(value = "author.name", name = "authorName")
+  private String author; // Can be filtered as "authorName" in queries
+  ```
+</ParamField>
+
+<ParamField path="sortable" type="boolean" default="true">
+  Whether this field can be used for sorting results.
+</ParamField>
+
+### Default Values
+
+<ParamField path="defaultValues" type="String[]" default="{}">
+  Specify default values that will be applied if the field is not provided in the query.
+  
+  ```java
+  @QFElement(value = "published", defaultValues = {"true"})
+  private boolean published;
+  ```
+</ParamField>
+
+<ParamField path="defaultOperation" type="QFOperationEnum" default="EQUAL">
+  The operation to use with default values.
+  
+  ```java
+  @QFElement(
+      value = "createDate",
+      defaultValues = {"2024-01-01T00:00:00Z"},
+      defaultOperation = QFOperationEnum.GREATER_THAN
+  )
+  private LocalDateTime createDate;
+  ```
+</ParamField>
+
+### String Handling
+
+<ParamField path="caseSensitive" type="boolean" default="false">
+  Controls case sensitivity for string operations (like `LIKE`, `STARTS_WITH`, `ENDS_WITH`).
+  
+  - `true`: "Example" matches only "Example"
+  - `false`: "Example" matches "EXAMPLE", "example", "eXaMpLe", etc.
+</ParamField>
+
+<ParamField path="blankIgnore" type="boolean" default="true">
+  When `true`, null or empty string values will be ignored and removed from the filter.
+</ParamField>
+
+### Advanced Properties
+
+<ParamField path="subquery" type="boolean" default="false">
+  Use a subquery instead of joins when filtering this field. Useful for optimizing certain types of queries.
+</ParamField>
+
+<ParamField path="arrayTyped" type="boolean" default="false">
+  Enable PostgreSQL array operations for this field. Only applicable when the database column is an array type.
+</ParamField>
+
+<ParamField path="autoFetch" type="boolean" default="true">
+  Automatically add fetch joins when this field is used for sorting. This prevents N+1 query issues.
+</ParamField>
+
+<ParamField path="order" type="int" default="0">
+  Execution order for the filter. Lower numbers execute first. This is important when using SpEL expressions that depend on other field values.
+</ParamField>
+
+<ParamField path="isSpPELExpression" type="boolean" default="false">
+  Enable Spring Expression Language (SpEL) for this field. This allows dynamic value resolution from security context or other fields.
+  
+  <Warning>
+    Use with caution! It's highly recommended to combine with `@QFBlockParsing` to prevent user-provided values.
+  </Warning>
+  
+  ```java
+  @QFElement(value = "createdBy", isSpPELExpression = true)
+  @QFBlockParsing
+  private String createdBy; // Can use principal?.name automatically
+  ```
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{JoinType.INNER}">
+  Specify the JPA join type(s) for nested properties.
+  
+  - Single value: Used for all joins
+  - Multiple values: First value for first join, last value for remaining joins
+  
+  ```java
+  @QFElement(value = "author.name", joinTypes = {JoinType.LEFT})
+  private String authorName;
+  ```
+</ParamField>
+
+<ParamField path="allowedOperations" type="QFOperationEnum[]" default="{}">
+  Restrict which operations can be used with this field. If empty, all compatible operations are allowed.
+  
+  ```java
+  @QFElement(
+      value = "email",
+      allowedOperations = {QFOperationEnum.EQUAL}
+  )
+  private String email; // Only equality checks allowed
+  ```
+</ParamField>
+
+### Inheritance Support
+
+<ParamField path="subClassMapping" type="Class<?>" default="Void.class">
+  Specify a subclass when filtering fields only available in a discriminator subclass.
+</ParamField>
+
+<ParamField path="subClassMappingPath" type="String" default="">
+  The path where the subclass mapping should be applied. Used with `subClassMapping`.
+  
+  ```java
+  @Entity
+  @Inheritance(strategy = InheritanceType.JOINED)
+  public class ParentEntity { }
+  
+  @Entity
+  public class SubclassEntity extends ParentEntity {
+      private String subClassField;
+  }
+  
+  @QFDefinitionClass(ParentEntity.class)
+  public class FilterDef {
+      @QFElement(
+          value = "subClassField",
+          subClassMapping = SubclassEntity.class
+      )
+      private String subClassField;
+  }
+  ```
+</ParamField>
+
+## @QFDate
+
+The `@QFDate` annotation configures date/time field parsing and formatting.
+
+```java
+@QFDate
+@QFElement("createDate")
+private LocalDateTime createDate;
+
+@QFDate(
+    timeFormat = "yyyy-MM-dd",
+    zoneOffset = "+01:00"
+)
+@QFElement("publishDate")
+private LocalDateTime publishDate;
+```
+
+### Properties
+
+<ParamField path="timeFormat" type="String" default="yyyy-MM-dd'T'HH:mm:ss'Z'">
+  The date/time pattern used to parse filter values. Uses Java's `DateTimeFormatter` patterns.
+</ParamField>
+
+<ParamField path="zoneOffset" type="String" default="Z">
+  The timezone offset to use when parsing dates. Accepts `ZoneOffset.of()` compatible strings.
+</ParamField>
+
+<ParamField path="parseDefaulting" type="QFDateDefault[]" default="{}">
+  Set default values for specific date/time fields when parsing incomplete dates.
+  
+  ```java
+  @QFDate(
+      timeFormat = "yyyy-MM-dd",
+      parseDefaulting = {
+          @QFDateDefault(chronoField = ChronoField.HOUR_OF_DAY, value = 0),
+          @QFDateDefault(chronoField = ChronoField.MINUTE_OF_HOUR, value = 0),
+          @QFDateDefault(chronoField = ChronoField.SECOND_OF_MINUTE, value = 0)
+      }
+  )
+  @QFElement("date")
+  private LocalDateTime date;
+  ```
+</ParamField>
+
+## @QFJsonElement
+
+Define filters for JSON fields (requires database JSON support).
+
+```java
+@QFJsonElement(
+    value = "metadata.tags",
+    name = "tags",
+    caseSensitive = false
+)
+private String tags;
+```
+
+### Properties
+
+<ParamField path="value" type="String" required>
+  JSON path to the field
+</ParamField>
+
+<ParamField path="name" type="String" default="">
+  Filter name in queries
+</ParamField>
+
+<ParamField path="caseSensitive" type="boolean" default="false">
+  Case sensitivity for string comparisons
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{JoinType.INNER}">
+  Join types for nested paths
+</ParamField>
+
+<ParamField path="allowedOperations" type="QFOperationJsonEnum[]" default="{}">
+  Allowed operations for this JSON field
+</ParamField>
+
+<ParamField path="defaultValue" type="String" default="">
+  Default value if not provided
+</ParamField>
+
+<ParamField path="defaultOperation" type="QFOperationJsonEnum" default="EQUAL">
+  Default operation to use
+</ParamField>
+
+<ParamField path="order" type="int" default="0">
+  Execution order
+</ParamField>
+
+## @QFCollectionElement
+
+Define filters for collection size operations.
+
+```java
+@QFCollectionElement(
+    value = "comments",
+    name = "commentCount"
+)
+private int commentCount;
+```
+
+### Properties
+
+<ParamField path="value" type="String" required>
+  Path to the collection field
+</ParamField>
+
+<ParamField path="name" type="String" default="">
+  Filter name in queries
+</ParamField>
+
+<ParamField path="subClassMapping" type="Class<?>" default="Void.class">
+  Subclass for inheritance scenarios
+</ParamField>
+
+<ParamField path="subClassMappingPath" type="String" default="">
+  Path for subclass mapping
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{JoinType.INNER}">
+  Join types for the collection
+</ParamField>
+
+<ParamField path="allowedOperations" type="QFCollectionOperationEnum[]" default="{}">
+  Allowed collection operations
+</ParamField>
+
+<ParamField path="defaultValue" type="int" default="Integer.MIN_VALUE">
+  Default value (Integer.MIN_VALUE means no default)
+</ParamField>
+
+<ParamField path="defaultOperation" type="QFCollectionOperationEnum" default="EQUAL">
+  Default operation
+</ParamField>
+
+<ParamField path="order" type="int" default="0">
+  Execution order
+</ParamField>
+
+## @QFDiscriminator
+
+Filter entities by discriminator type in inheritance hierarchies.
+
+```java
+@QFDiscriminator(
+    name = "entityType",
+    value = {
+        @QFDiscriminator.Value(name = "blog", type = BlogPost.class),
+        @QFDiscriminator.Value(name = "news", type = NewsPost.class)
+    }
+)
+private String discriminator;
+```
+
+### Properties
+
+<ParamField path="path" type="String" default="">
+  Path to the discriminator field
+</ParamField>
+
+<ParamField path="name" type="String" default="">
+  Filter name in queries
+</ParamField>
+
+<ParamField path="value" type="Value[]" required>
+  Array of possible discriminator values with their corresponding classes
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{JoinType.INNER}">
+  Join types
+</ParamField>
+
+<ParamField path="allowedOperations" type="QFOperationDiscriminatorEnum[]" default="{}">
+  Allowed operations
+</ParamField>
+
+<ParamField path="defaultValues" type="String[]" default="{}">
+  Default discriminator values
+</ParamField>
+
+<ParamField path="defaultOperation" type="QFOperationDiscriminatorEnum" default="EQUAL">
+  Default operation
+</ParamField>
+
+<ParamField path="order" type="int" default="0">
+  Execution order
+</ParamField>
+
+## Complete Example
+
+Here's a comprehensive filter definition combining multiple annotations:
+
+```java PostFilterDef.java
+@QFDefinitionClass(
+    value = PostBlog.class,
+    sortable = true,
+    distinct = true,
+    defaultSort = {
+        @QFDefaultSort(value = "createDate", direction = Direction.DESC)
+    }
+)
+public class PostFilterDef {
+
+    @QFElement("title")
+    private String title;
+
+    @QFElement(
+        value = "likes",
+        defaultValues = {"0"},
+        defaultOperation = QFOperationEnum.GREATER_THAN
+    )
+    private int likes;
+
+    @QFDate(timeFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'")
+    @QFElement("createDate")
+    private LocalDateTime createDate;
+
+    @QFElement(
+        value = "postType",
+        allowedOperations = {QFOperationEnum.EQUAL, QFOperationEnum.IN}
+    )
+    private String postType;
+
+    @QFElement("published")
+    @QFBlockParsing
+    private boolean published;
+
+    @QFElement(
+        value = "author.name",
+        name = "authorName",
+        caseSensitive = false,
+        joinTypes = {JoinType.LEFT}
+    )
+    private String authorName;
+
+    @QFCollectionElement(
+        value = "comments",
+        name = "commentCount"
+    )
+    private int commentCount;
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Meaningful Names" icon="tag">
+    Choose clear filter names that match your API documentation. Use the `name` property to create user-friendly field names.
+  </Card>
+  
+  <Card title="Restrict Operations" icon="lock">
+    Use `allowedOperations` to prevent inappropriate operations on sensitive fields (e.g., only allow exact matches on email fields).
+  </Card>
+  
+  <Card title="Configure Joins Wisely" icon="link">
+    Use LEFT joins for optional relationships and INNER joins for required ones. This affects both query correctness and performance.
+  </Card>
+  
+  <Card title="Set Sensible Defaults" icon="sliders">
+    Use `defaultValues` for common filters like "published = true" to simplify API usage.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Keep filter definitions in sync with your API documentation. The field names and operations you expose become part of your API contract.
+</Tip>
+
+<Note>
+  Multiple `@QFElement` annotations can be applied to the same field using the `@QFElements` wrapper annotation when you need different filter names for the same entity property.
+</Note>

@@ -1,0 +1,356 @@
+---
+title: "Discriminators"
+description: "Filter entities using JPA inheritance hierarchies with @QFDiscriminator"
+---
+
+The `@QFDiscriminator` annotation enables filtering on JPA entity inheritance hierarchies. This is particularly useful when working with polymorphic entities that use JPA's `@Inheritance` and `@DiscriminatorValue` annotations.
+
+## Overview
+
+Discriminators allow you to filter by entity type in inheritance hierarchies without writing custom queries. QueryFilterJPA automatically generates the appropriate JPA Criteria API predicates based on the discriminator type.
+
+## Basic Usage
+
+### Entity Inheritance Setup
+
+First, define your entity hierarchy using JPA inheritance:
+
+```java
+@Entity
+@Table(name = "topic")
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+@DiscriminatorColumn(
+    discriminatorType = DiscriminatorType.INTEGER,
+    name = "topic_type_id"
+)
+public class Topic {
+    @Id
+    @GeneratedValue
+    private Long id;
+    private String title;
+    private String owner;
+}
+
+@Entity
+@DiscriminatorValue("1")
+public class Post extends Topic {
+    private String content;
+}
+
+@Entity
+@DiscriminatorValue("2")
+public class Announcement extends Topic {
+    private Timestamp validUntil;
+}
+```
+
+### Filter Definition
+
+Define a filter with the `@QFDiscriminator` annotation:
+
+```java
+@QFDefinitionClass(Topic.class)
+public class TopicFilterDef {
+    
+    @QFDiscriminator({
+        @QFDiscriminator.Value(name = "POST", type = Post.class),
+        @QFDiscriminator.Value(name = "ANNOUNCEMENT", type = Announcement.class)
+    })
+    private String type;
+}
+```
+
+### Filtering by Type
+
+Use discriminator filters in your queries:
+
+```java
+// Get only posts
+QueryFilter<Topic> filter = processor.newQueryFilter(
+    "type=eq:POST",
+    QFParamType.RHS_COLON
+);
+List<Topic> posts = repository.findAll(filter);
+
+// Get only announcements
+QueryFilter<Topic> filter = processor.newQueryFilter(
+    "type=eq:ANNOUNCEMENT",
+    QFParamType.RHS_COLON
+);
+List<Topic> announcements = repository.findAll(filter);
+
+// Get both types using IN operation
+QueryFilter<Topic> filter = processor.newQueryFilter(
+    "type=in:POST,ANNOUNCEMENT",
+    QFParamType.RHS_COLON
+);
+List<Topic> allTopics = repository.findAll(filter);
+```
+
+## Supported Operations
+
+The `@QFDiscriminator` annotation supports the following operations:
+
+| Operation | Code | Description |
+|-----------|------|-------------|
+| Equal | `eq` | Match exact discriminator type |
+| Not Equal | `ne` | Exclude discriminator type |
+| In | `in` | Match any of the specified types |
+| Not In | `nin` | Exclude all specified types |
+
+### Examples
+
+```java
+// Not equal - get everything except posts
+QueryFilter<Topic> filter = processor.newQueryFilter(
+    "type=ne:POST",
+    QFParamType.RHS_COLON
+);
+
+// Not in - exclude multiple types
+QueryFilter<Topic> filter = processor.newQueryFilter(
+    "type=nin:POST,ANNOUNCEMENT",
+    QFParamType.RHS_COLON
+);
+```
+
+## Configuration Options
+
+### Custom Filter Name
+
+Specify a custom name for the filter field:
+
+```java
+@QFDiscriminator(
+    name = "topicType",
+    value = {
+        @QFDiscriminator.Value(name = "POST", type = Post.class),
+        @QFDiscriminator.Value(name = "ANNOUNCEMENT", type = Announcement.class)
+    }
+)
+private String type;
+```
+
+Query with: `topicType=eq:POST`
+
+### Join Types
+
+Configure join behavior for related entities:
+
+```java
+@QFDiscriminator(
+    value = {...},
+    joinTypes = {JoinType.LEFT}
+)
+private String type;
+```
+
+### Allowed Operations
+
+Restrict which operations are permitted:
+
+```java
+@QFDiscriminator(
+    value = {...},
+    allowedOperations = {
+        QFOperationDiscriminatorEnum.EQUAL,
+        QFOperationDiscriminatorEnum.IN
+    }
+)
+private String type;
+```
+
+### Default Values
+
+Set default discriminator values when none are specified:
+
+```java
+@QFDiscriminator(
+    value = {
+        @QFDiscriminator.Value(name = "ANNOUNCEMENT", type = Announcement.class),
+        @QFDiscriminator.Value(name = "POST", type = Post.class)
+    },
+    defaultValues = "ANNOUNCEMENT",
+    defaultOperation = QFOperationDiscriminatorEnum.NOT_EQUAL
+)
+private String type;
+
+// Without explicit filter, defaults to: type != ANNOUNCEMENT
+QueryFilter<Topic> filter = processor.newQueryFilter();
+// Returns only POST entities
+```
+
+### Execution Order
+
+Control the order of filter application:
+
+```java
+@QFDiscriminator(
+    value = {...},
+    order = 1
+)
+private String type;
+```
+
+## Advanced Usage
+
+### Programmatic Filtering
+
+Manually construct discriminator filters:
+
+```java
+QueryFilter<Topic> filter = processor.newQueryFilter(null, QFParamType.RHS_COLON);
+
+// Add discriminator filter programmatically
+filter.addNewField(
+    "type",
+    QFOperationDiscriminatorEnum.EQUAL,
+    List.of("POST")
+);
+
+List<Topic> posts = repository.findAll(filter);
+
+// Check if filtering by discriminator
+boolean isFiltering = filter.isFiltering("type");
+
+// Get actual discriminator values
+List<String> actualValues = filter.getActualValue("type");
+
+// Delete discriminator filter
+filter.deleteField("type");
+```
+
+### Inspecting Discriminator Operations
+
+Retrieve discriminator filter details:
+
+```java
+// Get first discriminator operation and values
+var pair = filter.getFirstActualDiscriminatorOperation("type");
+QFOperationDiscriminatorEnum operation = pair.getFirst();
+List<String> values = pair.getSecond();
+
+// Get all discriminator operations for a field
+List<Pair<QFOperationDiscriminatorEnum, List<String>>> operations =
+    filter.getActualDiscriminatorOperation("type");
+```
+
+## Inheritance Strategies
+
+Discriminators work with all JPA inheritance strategies:
+
+### SINGLE_TABLE
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+@DiscriminatorColumn(name = "type")
+public class Topic { ... }
+```
+
+Best for: Simple hierarchies with few columns
+
+### JOINED
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public class ParentEntity { ... }
+
+@Entity
+public class SubclassAEntity extends ParentEntity { ... }
+```
+
+Best for: Complex hierarchies with many subclass-specific fields
+
+### TABLE_PER_CLASS
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
+public class BaseEntity { ... }
+```
+
+Best for: Independent entities with minimal shared structure
+
+## Common Patterns
+
+### Filtering Nested Discriminators
+
+Combine discriminators with path-based filtering:
+
+```java
+@QFDefinitionClass(BlogPost.class)
+public class BlogFilterDef {
+    
+    @QFDiscriminator(
+        path = "author",
+        value = {
+            @QFDiscriminator.Value(name = "ADMIN", type = AdminUser.class),
+            @QFDiscriminator.Value(name = "REGULAR", type = RegularUser.class)
+        }
+    )
+    private String authorType;
+}
+```
+
+### Multiple Discriminators
+
+Use multiple discriminator fields in one filter:
+
+```java
+@QFDefinitionClass(Document.class)
+public class DocumentFilterDef {
+    
+    @QFDiscriminator({...})
+    private String documentType;
+    
+    @QFDiscriminator({...})
+    private String authorType;
+}
+
+// Filter by both discriminators
+QueryFilter<Document> filter = processor.newQueryFilter(
+    "documentType=eq:REPORT&authorType=eq:ADMIN",
+    QFParamType.RHS_COLON
+);
+```
+
+## Error Handling
+
+Handle discriminator-specific exceptions:
+
+```java
+try {
+    QueryFilter<Topic> filter = processor.newQueryFilter(
+        "type=eq:INVALID_TYPE",
+        QFParamType.RHS_COLON
+    );
+} catch (QFDiscriminatorNotFoundException e) {
+    // Invalid discriminator value provided
+    String field = e.getField();  // "type"
+    String value = e.getValue();  // "INVALID_TYPE"
+}
+```
+
+## Best Practices
+
+1. **Use meaningful names**: Choose discriminator value names that clearly represent the entity type
+2. **Limit inheritance depth**: Keep hierarchies shallow (2-3 levels) for better query performance
+3. **Consider query patterns**: Choose the inheritance strategy that matches your filtering needs
+4. **Document discriminator values**: Maintain clear documentation of available discriminator types
+5. **Validate inputs**: Use `allowedOperations` to restrict operations to those that make sense for your use case
+
+## Performance Considerations
+
+- **SINGLE_TABLE**: Fastest queries, but may waste storage on null columns
+- **JOINED**: More normalized, but requires joins that can impact performance
+- **TABLE_PER_CLASS**: Requires UNION queries, potentially slow with many subclasses
+
+<Tip>
+When filtering by discriminator type frequently, ensure your database has appropriate indexes on the discriminator column.
+</Tip>
+
+<Warning>
+Discriminator values are case-sensitive. Ensure your filter values match the defined names exactly.
+</Warning>

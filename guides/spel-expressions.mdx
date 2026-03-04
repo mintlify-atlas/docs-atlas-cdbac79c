@@ -1,0 +1,658 @@
+---
+title: SpEL Expressions
+description: Use Spring Expression Language in filters for dynamic and computed values
+---
+
+## Overview
+
+QueryFilterJPA supports Spring Expression Language (SpEL) in filter definitions, allowing you to create dynamic default values and computed filter criteria based on other field values. This powerful feature enables filters that adapt based on user input.
+
+## What is SpEL in QueryFilterJPA?
+
+SpEL (Spring Expression Language) allows you to:
+- Reference values from other filter fields
+- Perform calculations on filter values
+- Create dynamic default values
+- Build computed filter criteria
+
+<Warning>
+**Security Note:** SpEL expressions can execute arbitrary code. Only use SpEL with trusted filter definitions. Never allow user input to directly define SpEL expressions.
+</Warning>
+
+## Basic SpEL Usage
+
+### Referencing Other Fields
+
+You can reference other filter field values using `#fieldName` syntax:
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+import io.github.acoboh.query.filter.jpa.operations.QFOperationEnum;
+
+@QFDefinitionClass(PostBlog.class)
+public class PostSpELFilterDef {
+    
+    @QFElement("likes")
+    private int likes;
+    
+    // Use SpEL to reference 'likes' field
+    @QFElement(
+        value = "comments.likes",
+        isSpELExpression = true,
+        defaultValues = "#likes * 10",
+        defaultOperation = QFOperationEnum.GREATER_THAN
+    )
+    @QFBlockParsing  // Prevent manual override
+    private int commentLikes;
+}
+```
+
+Usage:
+
+```bash
+# Filter posts with likes >= 100
+GET /posts?likes=gte:100
+
+# Automatically also filters: comments.likes > 1000 (100 * 10)
+```
+
+### How It Works
+
+<Steps>
+
+1. **User provides filter value**
+   ```bash
+   GET /posts?likes=gte:100
+   ```
+
+2. **SpEL expression evaluates**
+   ```
+   #likes * 10 = 100 * 10 = 1000
+   ```
+
+3. **Automatic filter applied**
+   ```sql
+   WHERE post.likes >= 100 
+     AND comment.likes > 1000
+   ```
+
+</Steps>
+
+## SpEL Annotations
+
+### Required Annotations
+
+| Annotation | Purpose |
+|------------|----------|
+| `isSpELExpression = true` | Enables SpEL evaluation for the field |
+| `defaultValues` | The SpEL expression to evaluate |
+| `defaultOperation` | The operation to use with computed value |
+
+### Common Pattern
+
+```java
+@QFElement(
+    value = "fieldPath",              // Entity field path
+    isSpELExpression = true,          // Enable SpEL
+    defaultValues = "#otherField * 2", // SpEL expression
+    defaultOperation = QFOperationEnum.GREATER_THAN  // Operation
+)
+@QFBlockParsing  // Often used to prevent user override
+private Type fieldName;
+```
+
+## Complete Example
+
+### Filter Definition
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+import io.github.acoboh.query.filter.jpa.operations.QFOperationEnum;
+
+@QFDefinitionClass(PostBlog.class)
+public class PostSpELFilterDef {
+    
+    // User-provided filter
+    @QFElement("likes")
+    private int likes;
+    
+    // Computed filter based on likes
+    @QFElement(
+        value = "comments.likes",
+        isSpELExpression = true,
+        defaultValues = "#likes * 10",
+        defaultOperation = QFOperationEnum.GREATER_THAN
+    )
+    @QFBlockParsing
+    private int commentLikes;
+}
+```
+
+### Controller
+
+```java
+@RestController
+@RequestMapping("/posts")
+public class PostController {
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    @GetMapping
+    public List<PostDTO> getPosts(
+        @QFMultiParam(PostSpELFilterDef.class) QueryFilter<PostBlog> filter
+    ) {
+        return repository.findAll(filter)
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+}
+```
+
+### Usage Examples
+
+<Tabs>
+  <Tab title="Basic Usage">
+    ```bash
+    # User filters by likes >= 1
+    GET /posts?likes=gte:1
+    
+    # Automatically applies:
+    # - post.likes >= 1
+    # - comment.likes > 10 (1 * 10)
+    ```
+  </Tab>
+  <Tab title="Higher Values">
+    ```bash
+    # User filters by likes >= 50
+    GET /posts?likes=gte:50
+    
+    # Automatically applies:
+    # - post.likes >= 50
+    # - comment.likes > 500 (50 * 10)
+    ```
+  </Tab>
+  <Tab title="Exact Match">
+    ```bash
+    # User filters by likes = 100
+    GET /posts?likes=eq:100
+    
+    # Automatically applies:
+    # - post.likes = 100
+    # - comment.likes > 1000 (100 * 10)
+    ```
+  </Tab>
+</Tabs>
+
+## SpEL Expressions
+
+### Mathematical Operations
+
+```java
+// Multiply
+defaultValues = "#likes * 10"
+
+// Add
+defaultValues = "#likes + 100"
+
+// Subtract
+defaultValues = "#likes - 50"
+
+// Divide
+defaultValues = "#likes / 2"
+
+// Complex
+defaultValues = "(#likes * 2) + 100"
+```
+
+### Multiple Field References
+
+```java
+@QFElement("minPrice")
+private BigDecimal minPrice;
+
+@QFElement("maxPrice")
+private BigDecimal maxPrice;
+
+@QFElement(
+    value = "averagePrice",
+    isSpELExpression = true,
+    defaultValues = "(#minPrice + #maxPrice) / 2",
+    defaultOperation = QFOperationEnum.EQUAL
+)
+@QFBlockParsing
+private BigDecimal averagePrice;
+```
+
+### String Operations
+
+```java
+@QFElement("firstName")
+private String firstName;
+
+@QFElement(
+    value = "username",
+    isSpELExpression = true,
+    defaultValues = "#firstName.toLowerCase()",
+    defaultOperation = QFOperationEnum.STARTS_WITH
+)
+@QFBlockParsing
+private String username;
+```
+
+## Use Cases
+
+### Use Case 1: Proportional Filtering
+
+**Scenario:** Find posts where comment engagement is proportional to post engagement.
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class EngagementFilterDef {
+    
+    @QFElement("likes")
+    private int likes;
+    
+    // Comments should have at least 10x the post likes
+    @QFElement(
+        value = "comments.likes",
+        isSpELExpression = true,
+        defaultValues = "#likes * 10",
+        defaultOperation = QFOperationEnum.GREATER_THAN_OR_EQUAL
+    )
+    @QFBlockParsing
+    private int commentLikes;
+}
+```
+
+```bash
+# Find posts with at least 100 likes where comments have 1000+ likes
+GET /posts?likes=gte:100
+```
+
+### Use Case 2: Price Range Validation
+
+**Scenario:** Ensure product search has a reasonable price range.
+
+```java
+@QFDefinitionClass(Product.class)
+public class ProductFilterDef {
+    
+    @QFElement("minPrice")
+    private BigDecimal minPrice;
+    
+    // Max price must be at least 2x min price
+    @QFElement(
+        value = "price",
+        isSpELExpression = true,
+        defaultValues = "#minPrice * 2",
+        defaultOperation = QFOperationEnum.LESS_THAN_OR_EQUAL
+    )
+    @QFBlockParsing
+    private BigDecimal maxPrice;
+}
+```
+
+```bash
+# Search products with minPrice of $100, auto-caps at $200
+GET /products?minPrice=gte:100
+```
+
+### Use Case 3: Date Range Calculation
+
+**Scenario:** Find posts within a dynamic time window.
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class DateRangeFilterDef {
+    
+    @QFElement("daysAgo")
+    private int daysAgo;
+    
+    // Calculate date from days ago
+    @QFElement(
+        value = "createDate",
+        isSpELExpression = true,
+        defaultValues = "T(java.time.LocalDateTime).now().minusDays(#daysAgo)",
+        defaultOperation = QFOperationEnum.GREATER_THAN_OR_EQUAL
+    )
+    @QFBlockParsing
+    private LocalDateTime createDate;
+}
+```
+
+```bash
+# Find posts from the last 7 days
+GET /posts?daysAgo=eq:7
+```
+
+## Programmatic SpEL Override
+
+You can override SpEL expressions programmatically:
+
+```java
+@Service
+public class PostService {
+    
+    @Autowired
+    private QFProcessor<PostSpELFilterDef, PostBlog> processor;
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    public List<PostBlog> findWithCustomRatio(int minLikes, int ratio) {
+        // Create base filter
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            "likes=gte:" + minLikes,
+            QFParamType.RHS_COLON
+        );
+        
+        // Override SpEL with custom calculation
+        filter.overrideField(
+            "commentLikes",
+            QFOperationEnum.GREATER_THAN,
+            "#likes * " + ratio
+        );
+        
+        return repository.findAll(filter);
+    }
+}
+```
+
+Usage:
+
+```java
+// Find posts with 100+ likes and comments with 5000+ likes (50x ratio)
+List<PostBlog> posts = postService.findWithCustomRatio(100, 50);
+```
+
+## Advanced Patterns
+
+### Array Expressions
+
+```java
+@Test
+void testSpELArrayExpression() {
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        "likes=gte:1",
+        QFParamType.RHS_COLON
+    );
+    
+    // Override with array of values
+    filter.overrideField(
+        "commentLikes",
+        QFOperationEnum.EQUAL,
+        new String[] { "#likes * 100", "#likes * 200" }
+    );
+    
+    // Matches posts where comment.likes = (likes * 100) OR (likes * 200)
+    List<PostBlog> results = repository.findAll(filter);
+}
+```
+
+### Conditional Logic with SpEL
+
+```java
+@QFElement(
+    value = "discount",
+    isSpELExpression = true,
+    defaultValues = "#price > 100 ? 0.2 : 0.1",  // 20% if price > 100, else 10%
+    defaultOperation = QFOperationEnum.GREATER_THAN_OR_EQUAL
+)
+@QFBlockParsing
+private BigDecimal discount;
+```
+
+### Null-Safe Operations
+
+```java
+@QFElement(
+    value = "fullName",
+    isSpELExpression = true,
+    defaultValues = "#firstName != null ? #firstName : 'Anonymous'",
+    defaultOperation = QFOperationEnum.STARTS_WITH
+)
+@QFBlockParsing
+private String fullName;
+```
+
+## Security Considerations
+
+<Warning>
+**Critical Security Guidelines:**
+
+1. **Never** allow user input in SpEL expressions
+2. **Always** define SpEL in trusted filter definitions
+3. **Use** `@QFBlockParsing` to prevent user override
+4. **Validate** all filter inputs before processing
+5. **Limit** SpEL to simple calculations and references
+</Warning>
+
+### Unsafe Example (DON'T DO THIS)
+
+```java
+// DANGEROUS: Never do this!
+@GetMapping("/posts")
+public List<Post> getPosts(
+    @RequestParam String spelExpression  // User-controlled!
+) {
+    filter.overrideField(
+        "commentLikes",
+        QFOperationEnum.EQUAL,
+        spelExpression  // SECURITY RISK!
+    );
+    return repository.findAll(filter);
+}
+```
+
+### Safe Example
+
+```java
+// SAFE: SpEL defined in trusted filter definition
+@QFElement(
+    value = "comments.likes",
+    isSpELExpression = true,
+    defaultValues = "#likes * 10",  // Hardcoded in filter def
+    defaultOperation = QFOperationEnum.GREATER_THAN
+)
+@QFBlockParsing  // Users can't override
+private int commentLikes;
+```
+
+### Input Validation
+
+```java
+@RestControllerAdvice
+public class FilterSecurityValidator {
+    
+    @ExceptionHandler(SpelEvaluationException.class)
+    public ResponseEntity<ErrorResponse> handleSpelError(
+        SpelEvaluationException ex
+    ) {
+        // Log security incident
+        logger.warn("SpEL evaluation failed: {}", ex.getMessage());
+        
+        return ResponseEntity.badRequest()
+            .body(new ErrorResponse("Invalid filter expression"));
+    }
+}
+```
+
+## Testing SpEL Filters
+
+### Unit Tests
+
+```java
+@Test
+void testSpELDefaultExpression() {
+    // Create filter with likes = 1
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        "likes=gte:1",
+        QFParamType.RHS_COLON
+    );
+    
+    // SpEL should compute commentLikes > 10 (1 * 10)
+    List<PostBlog> results = repository.findAll(filter);
+    
+    // Verify only posts with comment likes > 10 are returned
+    assertThat(results).allMatch(post -> 
+        post.getComments().stream()
+            .anyMatch(comment -> comment.getLikes() > 10)
+    );
+}
+
+@Test
+void testSpELOverride() {
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        "likes=gte:1",
+        QFParamType.RHS_COLON
+    );
+    
+    // Override with custom expression
+    filter.overrideField(
+        "commentLikes",
+        QFOperationEnum.EQUAL,
+        "#likes * 100"
+    );
+    
+    // Verify computation: comment.likes = 100 (1 * 100)
+    List<PostBlog> results = repository.findAll(filter);
+    
+    assertThat(results).allMatch(post ->
+        post.getComments().stream()
+            .anyMatch(comment -> comment.getLikes() == 100)
+    );
+}
+```
+
+## Common Patterns
+
+### Pattern 1: Threshold Multiplier
+
+```java
+// Comments must be 5x more popular than post
+@QFElement(
+    value = "comments.likes",
+    isSpELExpression = true,
+    defaultValues = "#likes * 5",
+    defaultOperation = QFOperationEnum.GREATER_THAN
+)
+@QFBlockParsing
+private int commentLikes;
+```
+
+### Pattern 2: Range Calculation
+
+```java
+// Price must be within 20% of base price
+@QFElement("basePrice")
+private BigDecimal basePrice;
+
+@QFElement(
+    value = "price",
+    isSpELExpression = true,
+    defaultValues = "#basePrice * 1.2",
+    defaultOperation = QFOperationEnum.LESS_THAN_OR_EQUAL
+)
+@QFBlockParsing
+private BigDecimal maxPrice;
+```
+
+### Pattern 3: Derived Fields
+
+```java
+// Filter by total engagement (likes + comments)
+@QFElement("likes")
+private int likes;
+
+@QFElement("comments.count")
+private int commentCount;
+
+@QFElement(
+    value = "totalEngagement",
+    isSpELExpression = true,
+    defaultValues = "#likes + #commentCount",
+    defaultOperation = QFOperationEnum.GREATER_THAN_OR_EQUAL
+)
+@QFBlockParsing
+private int totalEngagement;
+```
+
+## Best Practices
+
+<Steps>
+
+### Keep Expressions Simple
+
+```java
+// Good: Simple, readable
+defaultValues = "#likes * 10"
+
+// Bad: Too complex, hard to maintain
+defaultValues = "((#likes * 2) + (#commentCount * 5)) / (#authorRating > 4 ? 2 : 3)"
+```
+
+### Use @QFBlockParsing
+
+Always use `@QFBlockParsing` with SpEL fields to prevent user tampering:
+
+```java
+@QFElement(
+    value = "comments.likes",
+    isSpELExpression = true,
+    defaultValues = "#likes * 10",
+    defaultOperation = QFOperationEnum.GREATER_THAN
+)
+@QFBlockParsing  // Essential for security
+private int commentLikes;
+```
+
+### Document SpEL Logic
+
+```java
+/**
+ * Filters posts by engagement ratio.
+ * 
+ * SpEL Logic:
+ * - commentLikes is automatically set to likes * 10
+ * - This ensures comments have 10x engagement of the post
+ * - Users cannot override this computed value
+ */
+@QFElement(
+    value = "comments.likes",
+    isSpELExpression = true,
+    defaultValues = "#likes * 10",
+    defaultOperation = QFOperationEnum.GREATER_THAN
+)
+@QFBlockParsing
+private int commentLikes;
+```
+
+### Test Edge Cases
+
+Test with boundary values:
+
+```java
+@Test
+void testSpELWithZero() {
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        "likes=eq:0",
+        QFParamType.RHS_COLON
+    );
+    // Should compute commentLikes > 0 (0 * 10)
+}
+
+@Test
+void testSpELWithNegative() {
+    // Ensure negative values are handled correctly
+}
+```
+
+</Steps>
+
+## Next Steps
+
+- Learn about [Custom Predicates](/guides/custom-predicates) for complex logic
+- Explore [PostgreSQL Arrays](/guides/postgresql-arrays) for array filtering
+- Check [JSON Filtering](/guides/json-filtering) for JSON operations

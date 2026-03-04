@@ -1,0 +1,249 @@
+---
+title: "@QFDate"
+description: "Configure date and time formatting for filter elements"
+---
+
+## Overview
+
+`@QFDate` is a field-level annotation used in conjunction with `@QFElement` to configure date and time parsing for filter fields. It allows you to specify custom date formats, timezones, and default values for date components.
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target(FIELD)
+public @interface QFDate
+```
+
+## Properties
+
+<ParamField path="timeFormat" type="String" default="yyyy-MM-dd'T'HH:mm:ss'Z'">
+  The date-time format pattern to use for parsing.
+  
+  Uses Java's `DateTimeFormatter` pattern syntax. If empty, a default timestamp format is used.
+  
+  Common patterns:
+  - `"yyyy-MM-dd'T'HH:mm:ss'Z'"` - ISO 8601 format (default)
+  - `"yyyy-MM-dd"` - Date only
+  - `"yyyy-MM-dd HH:mm:ss"` - Date and time
+  - `"dd/MM/yyyy"` - European date format
+</ParamField>
+
+<ParamField path="zoneOffset" type="String" default="Z">
+  The timezone offset to use when parsing dates.
+  
+  Uses `java.time.ZoneOffset.of(String)` format.
+  
+  Examples:
+  - `"Z"` - UTC (default)
+  - `"+01:00"` - UTC+1
+  - `"-05:00"` - UTC-5 (EST)
+  - `"+09:00"` - UTC+9 (JST)
+</ParamField>
+
+<ParamField path="parseDefaulting" type="QFDateDefault[]" default="{}">
+  Default values for date/time components not specified in the input.
+  
+  Useful when filtering by date only but the entity field is a timestamp. You can set default hours, minutes, and seconds.
+  
+  Each `QFDateDefault` has:
+  - `chronoField`: The `ChronoField` to set (e.g., `HOUR_OF_DAY`, `MINUTE_OF_DAY`, `SECOND_OF_MINUTE`)
+  - `value`: The default value for that field
+</ParamField>
+
+## Usage Examples
+
+### Basic Date Filter
+
+```java
+@QFDefinitionClass(Order.class)
+public class OrderFilterDef {
+    
+    @QFElement("createdAt")
+    @QFDate(timeFormat = "yyyy-MM-dd")
+    private LocalDate createdAt;
+}
+```
+
+**Usage:**
+```
+GET /api/orders?createdAt=eq:2024-03-15
+```
+
+### ISO 8601 DateTime (Default)
+
+```java
+@QFElement("updatedAt")
+@QFDate  // Uses default: yyyy-MM-dd'T'HH:mm:ss'Z'
+private LocalDateTime updatedAt;
+```
+
+**Usage:**
+```
+GET /api/orders?updatedAt=gt:2024-03-15T10:30:00Z
+```
+
+### Custom Date Format
+
+```java
+@QFElement("birthDate")
+@QFDate(timeFormat = "dd/MM/yyyy")
+private LocalDate birthDate;
+```
+
+**Usage:**
+```
+GET /api/users?birthDate=eq:15/03/1990
+```
+
+### Timezone-Aware Dates
+
+```java
+@QFElement("eventTime")
+@QFDate(
+    timeFormat = "yyyy-MM-dd HH:mm:ss",
+    zoneOffset = "+09:00"  // Japan Standard Time
+)
+private ZonedDateTime eventTime;
+```
+
+**Usage:**
+```
+GET /api/events?eventTime=gt:2024-03-15 14:30:00
+```
+
+### Date-Only Filter with Default Time Components
+
+When filtering by date on a timestamp field, you can set default time components:
+
+```java
+@QFElement("createdAt")
+@QFDate(
+    timeFormat = "yyyy-MM-dd",
+    parseDefaulting = {
+        @QFDateDefault(chronoField = ChronoField.HOUR_OF_DAY, value = 0),
+        @QFDateDefault(chronoField = ChronoField.MINUTE_OF_DAY, value = 0),
+        @QFDateDefault(chronoField = ChronoField.SECOND_OF_MINUTE, value = 0)
+    }
+)
+private LocalDateTime createdAt;
+```
+
+**Usage:**
+```
+GET /api/orders?createdAt=eq:2024-03-15
+// Will match 2024-03-15 00:00:00
+```
+
+### Start of Day vs End of Day
+
+```java
+@QFDefinitionClass(Event.class)
+public class EventFilterDef {
+    
+    // Start of day (00:00:00)
+    @QFElement("startDate")
+    @QFDate(
+        timeFormat = "yyyy-MM-dd",
+        parseDefaulting = {
+            @QFDateDefault(chronoField = ChronoField.HOUR_OF_DAY, value = 0),
+            @QFDateDefault(chronoField = ChronoField.MINUTE_OF_DAY, value = 0),
+            @QFDateDefault(chronoField = ChronoField.SECOND_OF_MINUTE, value = 0)
+        }
+    )
+    private LocalDateTime startDate;
+    
+    // End of day (23:59:59)
+    @QFElement("endDate")
+    @QFDate(
+        timeFormat = "yyyy-MM-dd",
+        parseDefaulting = {
+            @QFDateDefault(chronoField = ChronoField.HOUR_OF_DAY, value = 23),
+            @QFDateDefault(chronoField = ChronoField.MINUTE_OF_DAY, value = 59),
+            @QFDateDefault(chronoField = ChronoField.SECOND_OF_MINUTE, value = 59)
+        }
+    )
+    private LocalDateTime endDate;
+}
+```
+
+**Usage:**
+```
+GET /api/events?startDate=gte:2024-03-01&endDate=lte:2024-03-31
+// Finds events between 2024-03-01 00:00:00 and 2024-03-31 23:59:59
+```
+
+### Multiple Date Formats (using multiple @QFElement)
+
+```java
+@QFElement(value = "createdAt", name = "createdDate")
+@QFDate(timeFormat = "yyyy-MM-dd")
+private LocalDate createdDate;
+
+@QFElement(value = "createdAt", name = "createdDateTime")
+@QFDate(timeFormat = "yyyy-MM-dd'T'HH:mm:ss")
+private LocalDateTime createdDateTime;
+```
+
+**Usage:**
+```
+GET /api/orders?createdDate=eq:2024-03-15
+// OR
+GET /api/orders?createdDateTime=eq:2024-03-15T14:30:00
+```
+
+### Year-Month Filter
+
+```java
+@QFElement("reportMonth")
+@QFDate(
+    timeFormat = "yyyy-MM",
+    parseDefaulting = {
+        @QFDateDefault(chronoField = ChronoField.DAY_OF_MONTH, value = 1),
+        @QFDateDefault(chronoField = ChronoField.HOUR_OF_DAY, value = 0),
+        @QFDateDefault(chronoField = ChronoField.MINUTE_OF_DAY, value = 0),
+        @QFDateDefault(chronoField = ChronoField.SECOND_OF_MINUTE, value = 0)
+    }
+)
+private LocalDateTime reportMonth;
+```
+
+**Usage:**
+```
+GET /api/reports?reportMonth=eq:2024-03
+// Will match 2024-03-01 00:00:00
+```
+
+## Common ChronoField Values
+
+- `ChronoField.YEAR`
+- `ChronoField.MONTH_OF_YEAR`
+- `ChronoField.DAY_OF_MONTH`
+- `ChronoField.HOUR_OF_DAY`
+- `ChronoField.MINUTE_OF_HOUR`
+- `ChronoField.MINUTE_OF_DAY`
+- `ChronoField.SECOND_OF_MINUTE`
+- `ChronoField.NANO_OF_SECOND`
+
+## Date Operations
+
+When using `@QFDate`, you can use these operations:
+
+- `eq` - Equal to
+- `ne` - Not equal to
+- `gt` - Greater than (after)
+- `gte` - Greater than or equal (on or after)
+- `lt` - Less than (before)
+- `lte` - Less than or equal (on or before)
+- `btw` - Between two dates
+
+**Example:**
+```
+GET /api/orders?createdAt=btw:2024-01-01,2024-12-31
+```
+
+## Related Annotations
+
+- [`@QFElement`](/api/annotations/qf-element) - Define the filterable field
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define the entity filter

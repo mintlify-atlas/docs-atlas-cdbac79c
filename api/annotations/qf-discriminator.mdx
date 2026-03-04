@@ -1,0 +1,394 @@
+---
+title: "@QFDiscriminator"
+description: "Filter JPA entities by discriminator type in inheritance hierarchies"
+---
+
+## Overview
+
+`@QFDiscriminator` is a specialized annotation for filtering entities based on their discriminator type in JPA inheritance hierarchies. It allows querying specific subclasses in single table, joined, or table-per-class inheritance strategies.
+
+## Annotation Signature
+
+```java
+@Retention(RUNTIME)
+@Target(FIELD)
+public @interface QFDiscriminator
+```
+
+## Properties
+
+<ParamField path="path" type="String" default="(empty string)">
+  Path of the discriminator entity model.
+  
+  The path to the entity that uses discriminator-based inheritance. Leave empty for the root entity.
+</ParamField>
+
+<ParamField path="name" type="String" default="(empty string)">
+  Custom name to use in filter queries.
+  
+  If not specified, the field name from the filter definition class will be used.
+</ParamField>
+
+<ParamField path="value" type="Value[]" default="{}">
+  List of possible discriminator values and their corresponding entity types.
+  
+  Each `Value` defines:
+  - `name`: The discriminator value name used in queries
+  - `type`: The Java class for this discriminator type
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{ JoinType.INNER }">
+  Specify join types for nested property paths.
+  
+  - Single value: applied to all joins
+  - Multiple values: first value for first join, last value for remaining joins
+</ParamField>
+
+<ParamField path="allowedOperations" type="QFOperationDiscriminatorEnum[]" default="{}">
+  Restrict which operations are allowed for discriminator filtering.
+  
+  If empty, all operations are allowed. Available operations:
+  - `EQUAL` - Type equals value
+  - `NOT_EQUAL` - Type not equal to value
+  - `IN` - Type in list of values
+  - `NOT_IN` - Type not in list of values
+</ParamField>
+
+<ParamField path="defaultValues" type="String[]" default="{}">
+  Default discriminator values to use if the filter is not specified.
+  
+  If empty, no default filter is applied.
+</ParamField>
+
+<ParamField path="defaultOperation" type="QFOperationDiscriminatorEnum" default="EQUAL">
+  Default operation to use with `defaultValues`.
+  
+  Only applied if `defaultValues` is not empty.
+</ParamField>
+
+<ParamField path="order" type="int" default="0">
+  Processing order for this filter element.
+  
+  Lower numbers are processed first.
+</ParamField>
+
+## Usage Examples
+
+### Single Table Inheritance
+
+```java
+// Entity hierarchy
+@Entity
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+@DiscriminatorColumn(name = "type")
+public abstract class Vehicle {
+    @Id
+    private Long id;
+    private String brand;
+}
+
+@Entity
+@DiscriminatorValue("CAR")
+public class Car extends Vehicle {
+    private int doors;
+}
+
+@Entity
+@DiscriminatorValue("TRUCK")
+public class Truck extends Vehicle {
+    private double payloadCapacity;
+}
+
+// Filter Definition
+@QFDefinitionClass(Vehicle.class)
+public class VehicleFilterDef {
+    
+    @QFElement("brand")
+    private String brand;
+    
+    @QFDiscriminator(
+        value = {
+            @QFDiscriminator.Value(name = "car", type = Car.class),
+            @QFDiscriminator.Value(name = "truck", type = Truck.class)
+        }
+    )
+    private String vehicleType;
+}
+```
+
+**Usage:**
+```
+GET /api/vehicles?vehicleType=eq:car
+// Returns only Car entities
+
+GET /api/vehicles?vehicleType=in:car,truck&brand=eq:Toyota
+// Returns Toyota cars and trucks
+```
+
+### Joined Inheritance
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public abstract class Account {
+    @Id
+    private Long id;
+    private String accountNumber;
+}
+
+@Entity
+public class SavingsAccount extends Account {
+    private double interestRate;
+}
+
+@Entity
+public class CheckingAccount extends Account {
+    private double overdraftLimit;
+}
+
+@QFDefinitionClass(Account.class)
+public class AccountFilterDef {
+    
+    @QFDiscriminator(
+        name = "accountType",
+        value = {
+            @QFDiscriminator.Value(name = "savings", type = SavingsAccount.class),
+            @QFDiscriminator.Value(name = "checking", type = CheckingAccount.class)
+        }
+    )
+    private String type;
+}
+```
+
+**Usage:**
+```
+GET /api/accounts?accountType=eq:savings
+// Returns only SavingsAccount entities
+```
+
+### Default Discriminator Filter
+
+```java
+@QFDiscriminator(
+    value = {
+        @QFDiscriminator.Value(name = "active", type = ActiveUser.class),
+        @QFDiscriminator.Value(name = "inactive", type = InactiveUser.class),
+        @QFDiscriminator.Value(name = "suspended", type = SuspendedUser.class)
+    },
+    defaultValues = {"active"},
+    defaultOperation = QFOperationDiscriminatorEnum.EQUAL
+)
+private String userStatus;
+```
+
+When no filter is provided, defaults to showing only active users.
+
+### Limited Operations
+
+```java
+@QFDiscriminator(
+    value = {
+        @QFDiscriminator.Value(name = "employee", type = Employee.class),
+        @QFDiscriminator.Value(name = "manager", type = Manager.class)
+    },
+    allowedOperations = {
+        QFOperationDiscriminatorEnum.EQUAL,
+        QFOperationDiscriminatorEnum.IN
+    }
+)
+private String personType;
+```
+
+**Valid:**
+```
+GET /api/persons?personType=eq:employee
+GET /api/persons?personType=in:employee,manager
+```
+
+**Invalid (will throw error):**
+```
+GET /api/persons?personType=ne:employee
+```
+
+### Nested Discriminator Path
+
+```java
+@Entity
+public class Order {
+    @Id
+    private Long id;
+    
+    @ManyToOne
+    private Payment payment;
+}
+
+@Entity
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+public abstract class Payment {
+    @Id
+    private Long id;
+}
+
+@Entity
+public class CreditCardPayment extends Payment {
+    private String cardNumber;
+}
+
+@Entity
+public class BankTransferPayment extends Payment {
+    private String accountNumber;
+}
+
+@QFDefinitionClass(Order.class)
+public class OrderFilterDef {
+    
+    @QFDiscriminator(
+        path = "payment",
+        name = "paymentType",
+        value = {
+            @QFDiscriminator.Value(name = "card", type = CreditCardPayment.class),
+            @QFDiscriminator.Value(name = "transfer", type = BankTransferPayment.class)
+        }
+    )
+    private String paymentMethod;
+}
+```
+
+**Usage:**
+```
+GET /api/orders?paymentType=eq:card
+// Returns orders paid with credit card
+```
+
+### Multiple Discriminators
+
+```java
+@QFDefinitionClass(Document.class)
+public class DocumentFilterDef {
+    
+    @QFDiscriminator(
+        name = "documentType",
+        value = {
+            @QFDiscriminator.Value(name = "invoice", type = Invoice.class),
+            @QFDiscriminator.Value(name = "receipt", type = Receipt.class),
+            @QFDiscriminator.Value(name = "contract", type = Contract.class)
+        }
+    )
+    private String type;
+    
+    @QFDiscriminator(
+        path = "owner",
+        name = "ownerType",
+        value = {
+            @QFDiscriminator.Value(name = "person", type = Person.class),
+            @QFDiscriminator.Value(name = "company", type = Company.class)
+        }
+    )
+    private String ownerType;
+}
+```
+
+**Usage:**
+```
+GET /api/documents?documentType=eq:invoice&ownerType=eq:company
+// Returns invoices owned by companies
+```
+
+### Complex Filtering
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public abstract class Product {
+    @Id
+    private Long id;
+    private String name;
+    private BigDecimal price;
+}
+
+@Entity
+public class PhysicalProduct extends Product {
+    private double weight;
+}
+
+@Entity
+public class DigitalProduct extends Product {
+    private String downloadUrl;
+}
+
+@QFDefinitionClass(Product.class)
+public class ProductFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("price")
+    private BigDecimal price;
+    
+    @QFDiscriminator(
+        name = "productType",
+        value = {
+            @QFDiscriminator.Value(name = "physical", type = PhysicalProduct.class),
+            @QFDiscriminator.Value(name = "digital", type = DigitalProduct.class)
+        }
+    )
+    private String type;
+}
+```
+
+**Usage:**
+```
+GET /api/products?productType=eq:digital&price=lt:50
+// Returns digital products under $50
+```
+
+## Discriminator Operations
+
+### EQUAL (eq)
+Matches entities of the specified discriminator type.
+
+```
+GET /api/entities?type=eq:subtype1
+```
+
+### NOT_EQUAL (ne)
+Matches entities NOT of the specified discriminator type.
+
+```
+GET /api/entities?type=ne:subtype1
+```
+
+### IN (in)
+Matches entities of any of the specified discriminator types.
+
+```
+GET /api/entities?type=in:subtype1,subtype2,subtype3
+```
+
+### NOT_IN (nin)
+Matches entities NOT of any of the specified discriminator types.
+
+```
+GET /api/entities?type=nin:archived,deleted
+```
+
+## Inheritance Strategies
+
+`@QFDiscriminator` works with all JPA inheritance strategies:
+
+1. **SINGLE_TABLE**: All entities in one table with a discriminator column
+2. **JOINED**: Each entity in its own table, joined by foreign key
+3. **TABLE_PER_CLASS**: Each concrete entity in its own table
+
+## Best Practices
+
+1. **Name discriminator values clearly** to match your domain model
+2. **Use defaults** to filter out archived or deleted subtypes by default
+3. **Limit operations** if you only need basic equality checks
+4. **Document available types** in your API documentation
+5. **Consider performance** when filtering joined inheritance hierarchies
+
+## Related Annotations
+
+- [`@QFElement`](/api/annotations/qf-element) - Standard field filtering
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define the entity filter

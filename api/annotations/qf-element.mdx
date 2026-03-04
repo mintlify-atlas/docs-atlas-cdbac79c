@@ -1,0 +1,227 @@
+---
+title: "@QFElement"
+description: "Define a filterable element in a query filter definition class"
+---
+
+## Overview
+
+`@QFElement` is the core annotation for defining filterable fields in a filter definition class. It maps a field in your filter definition to a property path in the JPA entity, configuring how the field can be filtered, sorted, and queried.
+
+This annotation is repeatable, allowing multiple filter configurations for the same field.
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target({ FIELD, ANNOTATION_TYPE })
+@Repeatable(QFElements.class)
+public @interface QFElement
+```
+
+## Properties
+
+<ParamField path="value" type="String" required>
+  Path to the entity property to filter.
+  
+  This is the full path from the entity root to the property you want to filter. Use dot notation for nested properties.
+  
+  Example: `"user.address.city"`, `"status"`, `"author.name"`
+</ParamField>
+
+<ParamField path="name" type="String" default="(empty string)">
+  Custom name to use in filter queries.
+  
+  If not specified, the field name from the filter definition class will be used.
+  
+  Example: `name = "authorName"` allows filtering with `authorName=eq:John`
+</ParamField>
+
+<ParamField path="subquery" type="boolean" default="false">
+  Use subquery instead of joins for nested attributes.
+  
+  When `true`, the filter will use a subquery instead of joining tables. Useful for avoiding Cartesian products.
+</ParamField>
+
+<ParamField path="sortable" type="boolean" default="true">
+  Enable or disable sorting for this element.
+  
+  When `false`, this field cannot be used for sorting.
+</ParamField>
+
+<ParamField path="defaultValues" type="String[]" default="{}">
+  Default values to apply when this filter is not explicitly provided.
+  
+  These values will be used with the `defaultOperation` if no filter is specified.
+</ParamField>
+
+<ParamField path="defaultOperation" type="QFOperationEnum" default="EQUAL">
+  Default operation to use with `defaultValues`.
+  
+  Available operations: `EQUAL`, `NOT_EQUAL`, `GREATER_THAN`, `GREATER_EQUAL_THAN`, `LESS_THAN`, `LESS_EQUAL_THAN`, `BETWEEN`, `LIKE`, `NOT_LIKE`, `STARTS_WITH`, `ENDS_WITH`, `IN`, `NOT_IN`, `ISNULL`, `OVERLAP`, `NOT_OVERLAP`, `CONTAINED`, `NOT_CONTAINED`
+</ParamField>
+
+<ParamField path="caseSensitive" type="boolean" default="false">
+  Enable case-sensitive matching for string operations.
+  
+  - `true`: "Example" matches only "Example"
+  - `false`: "Example" matches "EXAMPLE", "example", "eXAmple", etc.
+</ParamField>
+
+<ParamField path="arrayTyped" type="boolean" default="false">
+  Treat the field as a PostgreSQL ARRAY type.
+  
+  When `true`, queries will be created using PostgreSQL array operators.
+</ParamField>
+
+<ParamField path="isSpPELExpression" type="boolean" default="false">
+  Enable Spring Expression Language (SpEL) for this field.
+  
+  **Use with caution!** Allows SpEL expressions like `principal?.name` or `#otherElement > 10`.
+  
+  Highly recommended to use with `@QFBlockParsing` to prevent user input parsing.
+</ParamField>
+
+<ParamField path="blankIgnore" type="boolean" default="true">
+  Ignore null or empty values for this filter.
+  
+  When `true`, null or blank values will be ignored and removed from the filter.
+</ParamField>
+
+<ParamField path="order" type="int" default="0">
+  Processing order for this filter element.
+  
+  Required if using SpEL expressions that depend on values from other fields. Lower numbers are processed first.
+</ParamField>
+
+<ParamField path="autoFetch" type="boolean" default="true">
+  Automatically enable fetch loading when sorting by this field.
+  
+  When `true` and this field is used for sorting, related entities will be fetched to avoid N+1 queries.
+</ParamField>
+
+<ParamField path="subClassMapping" type="Class<?>" default="Void.class">
+  Map this element to a specific subclass in inheritance hierarchies.
+  
+  Used when filtering on properties only available in entity subclasses (discriminator types).
+</ParamField>
+
+<ParamField path="subClassMappingPath" type="String" default="(empty string)">
+  Path to apply subclass mapping.
+  
+  Must be used together with `subClassMapping`.
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{ JoinType.INNER }">
+  Specify join types for nested property paths.
+  
+  - Single value: applied to all joins
+  - Multiple values: first value for first join, last value for remaining joins
+  
+  Example: `{LEFT, INNER}` - first join is LEFT, rest are INNER
+</ParamField>
+
+<ParamField path="allowedOperations" type="QFOperationEnum[]" default="{}">
+  Restrict which operations are allowed for this element.
+  
+  If empty, all applicable operations are allowed. Specify an array to limit operations.
+  
+  Example: `allowedOperations = {QFOperationEnum.EQUAL, QFOperationEnum.IN}`
+</ParamField>
+
+## Usage Examples
+
+### Basic Element
+
+```java
+@QFElement("username")
+private String username;
+```
+
+### Nested Property with Custom Name
+
+```java
+@QFElement(value = "author.name", name = "authorName")
+private String authorName;
+```
+
+### Case-Sensitive String Filter
+
+```java
+@QFElement(value = "email", caseSensitive = true)
+private String email;
+```
+
+### Default Values
+
+```java
+@QFElement(
+    value = "status",
+    defaultValues = {"ACTIVE", "PENDING"},
+    defaultOperation = QFOperationEnum.IN
+)
+private String status;
+```
+
+### Limited Operations
+
+```java
+@QFElement(
+    value = "price",
+    allowedOperations = {
+        QFOperationEnum.EQUAL,
+        QFOperationEnum.GREATER_THAN,
+        QFOperationEnum.LESS_THAN
+    }
+)
+private BigDecimal price;
+```
+
+### Subclass Mapping (Inheritance)
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public class ParentEntity {
+    // Base fields
+}
+
+@Entity
+public class SubclassAEntity extends ParentEntity {
+    private String subClassField;
+}
+
+@QFDefinitionClass(ParentEntity.class)
+public class FilterParentEntityDef {
+    @QFElement(
+        value = "subClassField",
+        subClassMapping = SubclassAEntity.class
+    )
+    private String subClassField;
+}
+```
+
+### Using Subqueries
+
+```java
+@QFElement(value = "orders.total", subquery = true)
+private BigDecimal orderTotal;
+```
+
+### Custom Join Types
+
+```java
+@QFElement(
+    value = "department.manager.name",
+    joinTypes = {JoinType.LEFT, JoinType.INNER}
+)
+private String managerName;
+```
+
+## Related Annotations
+
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define the entity to filter
+- [`@QFDate`](/api/annotations/qf-date) - Configure date/time formatting
+- [`@QFSortable`](/api/annotations/qf-sortable) - Define sort-only fields
+- [`@QFJsonElement`](/api/annotations/qf-json-element) - Filter JSON fields
+- [`@QFCollectionElement`](/api/annotations/qf-collection-element) - Filter collections

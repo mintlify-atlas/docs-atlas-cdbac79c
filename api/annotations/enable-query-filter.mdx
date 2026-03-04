@@ -1,0 +1,78 @@
+---
+title: "@EnableQueryFilter"
+description: "Enable QueryFilterJPA component scanning for filter definition classes"
+---
+
+## Overview
+
+`@EnableQueryFilter` is a class-level annotation used to configure the base packages where QueryFilterJPA will scan for filter definition classes annotated with `@QFDefinitionClass`.
+
+This annotation should be placed on a Spring configuration class (typically the main application class) to enable automatic discovery of filter definitions.
+
+## Annotation Signature
+
+```java
+@Retention(RUNTIME)
+@Target(TYPE)
+public @interface EnableQueryFilter
+```
+
+## Properties
+
+<ParamField path="basePackages" type="String[]" default="{}">
+  Base package names to scan for classes annotated with `@QFDefinitionClass`.
+  
+  Specify one or more package names where your filter definition classes are located.
+  
+  Example: `@EnableQueryFilter(basePackages = "com.example.filters")`
+</ParamField>
+
+<ParamField path="basePackageClasses" type="Class<?>[]" default="{}">
+  Base package classes to scan for classes annotated with `@QFDefinitionClass`.
+  
+  An alternative to `basePackages` that uses marker classes to identify the packages to scan. The package of each specified class will be scanned.
+  
+  Example: `@EnableQueryFilter(basePackageClasses = MyFilterMarker.class)`
+</ParamField>
+
+## Usage Examples
+
+### Basic Usage with Package Name
+
+```java
+@SpringBootApplication
+@EnableQueryFilter(basePackages = "com.example.filters")
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}
+```
+
+### Multiple Packages
+
+```java
+@Configuration
+@EnableQueryFilter(basePackages = {
+    "com.example.filters",
+    "com.example.core.filters"
+})
+public class QueryFilterConfig {
+}
+```
+
+### Using Marker Classes
+
+```java
+@Configuration
+@EnableQueryFilter(basePackageClasses = {
+    UserFilterMarker.class,
+    ProductFilterMarker.class
+})
+public class QueryFilterConfig {
+}
+```
+
+## Related Annotations
+
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define filter classes that will be discovered by this annotation

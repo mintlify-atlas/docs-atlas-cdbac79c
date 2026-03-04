@@ -1,0 +1,527 @@
+---
+title: Spring Boot 3 Example
+description: Complete working example for QueryFilterJPA with Spring Boot 3
+---
+
+This guide provides a complete working example of QueryFilterJPA with Spring Boot 3, including all dependencies, configuration, and code.
+
+## Project Setup
+
+### Maven Dependencies
+
+Add the following dependencies to your `pom.xml`:
+
+```xml
+<properties>
+    <spring-boot.version>3.5.2</spring-boot.version>
+    <query-filter.version>2.0.0</query-filter.version>
+    <springdoc.version>2.8.9</springdoc.version>
+</properties>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-dependencies</artifactId>
+            <version>${spring-boot.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <!-- Spring Boot Starters -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- QueryFilterJPA for Spring Boot 3 -->
+    <dependency>
+        <groupId>io.github.acoboh</groupId>
+        <artifactId>query-filter-jpa-3</artifactId>
+        <version>${query-filter.version}</version>
+    </dependency>
+    
+    <!-- Optional: OpenAPI integration -->
+    <dependency>
+        <groupId>io.github.acoboh</groupId>
+        <artifactId>query-filter-jpa-openapi-3</artifactId>
+        <version>${query-filter.version}</version>
+    </dependency>
+    
+    <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>${springdoc.version}</version>
+    </dependency>
+
+    <!-- Database -->
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <scope>runtime</scope>
+    </dependency>
+</dependencies>
+```
+
+### Gradle Dependencies
+
+For Gradle, add to your `build.gradle`:
+
+```gradle
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'io.github.acoboh:query-filter-jpa-3:2.0.0'
+    
+    // Optional: OpenAPI integration
+    implementation 'io.github.acoboh:query-filter-jpa-openapi-3:2.0.0'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9'
+    
+    runtimeOnly 'org.postgresql:postgresql'
+}
+```
+
+## Application Configuration
+
+### Enable QueryFilter
+
+Enable QueryFilter in your main application class:
+
+```java
+package com.example.app;
+
+import static org.springframework.data.web.config.EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.web.config.EnableSpringDataWebSupport;
+
+import com.example.app.filterdef.PostFilterDef;
+import io.github.acoboh.query.filter.jpa.annotations.EnableQueryFilter;
+
+@SpringBootApplication
+@EnableQueryFilter(basePackageClasses = PostFilterDef.class)
+@EnableSpringDataWebSupport(pageSerializationMode = VIA_DTO)
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}
+```
+
+### Application Properties
+
+Configure your database in `application.yml`:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/testdb
+    username: postgres
+    password: password
+    hikari:
+      connection-timeout: 20000
+      maximum-pool-size: 5
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+      
+logging:
+  level:
+    io.github.acoboh: debug
+```
+
+## Entity Classes
+
+### Base Entity
+
+```java
+package com.example.app.entities;
+
+import java.util.Objects;
+import jakarta.persistence.Id;
+import jakarta.persistence.MappedSuperclass;
+import io.hypersistence.utils.hibernate.id.Tsid;
+
+@MappedSuperclass
+public class BaseEntity {
+    
+    @Id
+    @Tsid
+    private String tsid;
+    
+    protected BaseEntity() {
+        // Empty for JPA
+    }
+    
+    public String getTsid() {
+        return tsid;
+    }
+    
+    @Override
+    public int hashCode() {
+        return Objects.hash(tsid);
+    }
+    
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        BaseEntity other = (BaseEntity) obj;
+        return Objects.equals(tsid, other.tsid);
+    }
+}
+```
+
+### PostBlog Entity
+
+```java
+package com.example.app.entities;
+
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.List;
+import jakarta.persistence.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+
+@Entity
+public class PostBlog extends BaseEntity {
+    
+    public enum PostType {
+        EDUCATIONAL, INFO, SOCIAL, VIDEO
+    }
+    
+    private String title;
+    private String content;
+    private int likes;
+    
+    @CreatedDate
+    private LocalDateTime createDate;
+    
+    @LastModifiedBy
+    private Timestamp lastTimestamp;
+    
+    private boolean published;
+    
+    @Enumerated(EnumType.STRING)
+    private PostType postType;
+    
+    @OneToMany(mappedBy = "post", orphanRemoval = true)
+    private List<Comment> comments;
+    
+    protected PostBlog() {
+        // Empty for JPA
+    }
+    
+    public PostBlog(String title, String content, int likes, PostType postType) {
+        this.title = title;
+        this.content = content;
+        this.likes = likes;
+        this.postType = postType;
+    }
+    
+    // Getters and setters
+    public String getTitle() { return title; }
+    public String getContent() { return content; }
+    public int getLikes() { return likes; }
+    public LocalDateTime getCreateDate() { return createDate; }
+    public Timestamp getLastTimestamp() { return lastTimestamp; }
+    public boolean isPublished() { return published; }
+    public void setPublished(boolean published) { this.published = published; }
+    public PostType getPostType() { return postType; }
+    public List<Comment> getComments() { return comments; }
+}
+```
+
+### Comment Entity
+
+```java
+package com.example.app.entities;
+
+import jakarta.persistence.*;
+
+@Entity
+public class Comment extends BaseEntity {
+    
+    private String comment;
+    
+    @JoinColumn(name = "post_id")
+    @ManyToOne
+    private PostBlog post;
+    
+    public Comment(String comment, PostBlog post) {
+        this.comment = comment;
+        this.post = post;
+    }
+    
+    protected Comment() {
+        // Empty for JPA
+    }
+    
+    public String getComment() { return comment; }
+    public PostBlog getPost() { return post; }
+}
+```
+
+## Filter Definition
+
+Create a filter definition class to specify which fields can be filtered:
+
+```java
+package com.example.app.filterdef;
+
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import com.example.app.entities.PostBlog;
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    @QFElement("title")
+    private String title;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    @QFDate
+    @QFElement("createDate")
+    private LocalDateTime createDate;
+    
+    @QFSortable("lastTimestamp")
+    private Timestamp lastTimestamp;
+    
+    @QFElement("postType")
+    private String postType;
+    
+    @QFElement("published")
+    @QFBlockParsing
+    private boolean published;
+}
+```
+
+### Filter Annotations Explained
+
+- `@QFDefinitionClass(PostBlog.class)`: Links this filter definition to the PostBlog entity
+- `@QFElement("fieldName")`: Makes a field filterable using the specified entity field name
+- `@QFDate`: Enables date-specific operations for date/time fields
+- `@QFSortable`: Allows sorting by this field
+- `@QFBlockParsing`: Prevents parsing of complex expressions for this field (security feature)
+
+## Repository
+
+Create a JPA repository that extends `JpaSpecificationExecutor`:
+
+```java
+package com.example.app.repositories;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import com.example.app.entities.PostBlog;
+
+public interface PostBlogRepository 
+    extends JpaSpecificationExecutor<PostBlog>, JpaRepository<PostBlog, String> {
+}
+```
+
+## Service Layer
+
+```java
+package com.example.app.services;
+
+import com.example.app.domain.PostDTO;
+import com.example.app.entities.PostBlog;
+import com.example.app.repositories.PostBlogRepository;
+import io.github.acoboh.query.filter.jpa.processor.QueryFilter;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PostBlogService {
+    
+    private final PostBlogRepository repository;
+    
+    public PostBlogService(PostBlogRepository repository) {
+        this.repository = repository;
+    }
+    
+    public Page<PostDTO> getPosts(QueryFilter<PostBlog> filter, int page, int size) {
+        Page<PostBlog> pageSlice = repository.findAll(filter, PageRequest.of(page, size));
+        return pageSlice.map(this::toDTO);
+    }
+    
+    private PostDTO toDTO(PostBlog post) {
+        return new PostDTO(
+            post.getTsid(),
+            post.getTitle(),
+            post.getContent(),
+            post.getLikes(),
+            post.getCreateDate(),
+            post.getLastTimestamp(),
+            post.isPublished(),
+            post.getPostType()
+        );
+    }
+}
+```
+
+## REST Controller
+
+### Single Parameter Style
+
+Receive the entire filter as a single query parameter:
+
+```java
+package com.example.app.controllers;
+
+import com.example.app.domain.PostDTO;
+import com.example.app.entities.PostBlog;
+import com.example.app.filterdef.PostFilterDef;
+import com.example.app.services.PostBlogService;
+import io.github.acoboh.query.filter.jpa.annotations.QFParam;
+import io.github.acoboh.query.filter.jpa.processor.QueryFilter;
+import org.springframework.data.domain.Page;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/posts")
+public class PostRestController {
+    
+    private final PostBlogService service;
+    
+    public PostRestController(PostBlogService service) {
+        this.service = service;
+    }
+    
+    @GetMapping("/single-param")
+    public Page<PostDTO> getPosts(
+        @QFParam(PostFilterDef.class) 
+        @RequestParam(required = false, defaultValue = "", name = "filter") 
+        QueryFilter<PostBlog> filter,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "10") int size) {
+        return service.getPosts(filter, page, size);
+    }
+}
+```
+
+### Multi-Parameter Style
+
+Receive each filter field as a separate query parameter:
+
+```java
+@GetMapping("/multi-param")
+public Page<PostDTO> getPostMultiFilter(
+    @QFMultiParam(PostFilterDef.class) QueryFilter<PostBlog> filter,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "10") int size) {
+    return service.getPosts(filter, page, size);
+}
+```
+
+## Example API Calls
+
+### Single Parameter Style
+
+Filter posts with single parameter:
+
+```bash
+# Filter by title containing "Spring"
+GET /posts/single-param?filter=title~*Spring*
+
+# Filter by likes greater than 100
+GET /posts/single-param?filter=likes>100
+
+# Filter published posts
+GET /posts/single-param?filter=published:true
+
+# Multiple conditions
+GET /posts/single-param?filter=published:true%26likes>50
+
+# Date filtering
+GET /posts/single-param?filter=createDate>2024-01-01
+
+# Sort by likes descending
+GET /posts/single-param?filter=+sort(likes,desc)
+```
+
+### Multi-Parameter Style
+
+Filter posts with multiple parameters:
+
+```bash
+# Filter by title
+GET /posts/multi-param?title~*Spring*
+
+# Multiple filters
+GET /posts/multi-param?published:true&likes>50
+
+# With sorting
+GET /posts/multi-param?published:true&+sort(likes,desc)
+```
+
+## DTO Class
+
+```java
+package com.example.app.domain;
+
+import com.example.app.entities.PostBlog.PostType;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+
+public record PostDTO(
+    String tsid,
+    String title,
+    String content,
+    int likes,
+    LocalDateTime createDate,
+    Timestamp lastTimestamp,
+    boolean published,
+    PostType postType
+) {}
+```
+
+## Running the Application
+
+1. Start PostgreSQL database:
+   ```bash
+   docker run -d --name postgres \
+     -e POSTGRES_DB=testdb \
+     -e POSTGRES_USER=postgres \
+     -e POSTGRES_PASSWORD=password \
+     -p 5432:5432 postgres:16
+   ```
+
+2. Run the application:
+   ```bash
+   mvn spring-boot:run
+   ```
+
+3. Access Swagger UI:
+   ```
+   http://localhost:8080/swagger-ui.html
+   ```
+
+## Next Steps
+
+- Learn about [advanced filtering patterns](/examples/common-patterns)
+- Explore [Spring Boot 4 migration](/examples/spring-boot-4)
+- Read the [Filter Definition guide](/concepts/filter-definitions)
+- Check out [Query Operations](/concepts/operations)

@@ -1,0 +1,205 @@
+---
+title: "@QFParam"
+description: "Bind a filter parameter in Spring MVC controller methods"
+---
+
+## Overview
+
+`@QFParam` is a parameter-level annotation used in Spring MVC controller methods to automatically parse and bind query filter parameters from HTTP requests. It creates a filter instance based on the specified filter definition class.
+
+## Annotation Signature
+
+```java
+@Retention(RUNTIME)
+@Target(PARAMETER)
+public @interface QFParam
+```
+
+## Properties
+
+<ParamField path="value" type="Class<?>" required>
+  The filter definition class to use for parsing.
+  
+  This should be a class annotated with `@QFDefinitionClass`.
+  
+  Example: `@QFParam(UserFilterDef.class)`
+</ParamField>
+
+<ParamField path="type" type="QFParamType" default="RHS_COLON">
+  The parsing standard to use for filter parameters.
+  
+  Available options:
+  - `RHS_COLON`: Right-hand side colon format (e.g., `name=eq:John`)
+  - `LHS_BRACKETS`: Left-hand side brackets format (e.g., `name[eq]=John`)
+</ParamField>
+
+<ParamField path="base64Encoded" type="boolean" default="false">
+  Indicates if the filter parameter is Base64 encoded.
+  
+  When `true`, the parameter value will be decoded from Base64 before parsing.
+  
+  Useful for handling complex filter strings that may contain special characters.
+</ParamField>
+
+## Parameter Format Standards
+
+### RHS_COLON (Right-Hand Side Colon)
+
+The default format where the operation is specified after the equals sign, separated by a colon.
+
+**Format:** `field=operation:value`
+
+**Examples:**
+- `name=eq:John`
+- `age=gt:25`
+- `email=like:%@example.com`
+- `status=in:ACTIVE,PENDING`
+
+### LHS_BRACKETS (Left-Hand Side Brackets)
+
+An alternative format where the operation is specified in brackets before the equals sign.
+
+**Format:** `field[operation]=value`
+
+**Examples:**
+- `name[eq]=John`
+- `age[gt]=25`
+- `email[like]=%@example.com`
+- `status[in]=ACTIVE,PENDING`
+
+## Usage Examples
+
+### Basic Usage with RHS Colon
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @GetMapping
+    public List<User> getUsers(@QFParam(UserFilterDef.class) QueryFilter<User> filter) {
+        return userRepository.findAll(filter);
+    }
+}
+```
+
+**Request:**
+```
+GET /api/users?username=eq:john&age=gt:25
+```
+
+### Using LHS Brackets Format
+
+```java
+@GetMapping("/search")
+public List<Product> searchProducts(
+    @QFParam(value = ProductFilterDef.class, type = QFParamType.LHS_BRACKETS) 
+    QueryFilter<Product> filter
+) {
+    return productRepository.findAll(filter);
+}
+```
+
+**Request:**
+```
+GET /api/products/search?name[like]=%laptop%&price[lt]=1000
+```
+
+### Base64 Encoded Parameters
+
+```java
+@GetMapping("/advanced")
+public List<Order> getOrders(
+    @QFParam(value = OrderFilterDef.class, base64Encoded = true) 
+    QueryFilter<Order> filter
+) {
+    return orderRepository.findAll(filter);
+}
+```
+
+**Usage:**
+```java
+// Client encodes the filter string
+String filterString = "status=eq:COMPLETED&total=gt:100";
+String encoded = Base64.getEncoder().encodeToString(filterString.getBytes());
+// Request: GET /api/orders/advanced?filter=c3RhdHVzPWVxOkNPTVBMRVRFRCZ0b3RhbD1ndDoxMDA=
+```
+
+### With Pagination
+
+```java
+@GetMapping
+public Page<Employee> getEmployees(
+    @QFParam(EmployeeFilterDef.class) QueryFilter<Employee> filter,
+    Pageable pageable
+) {
+    return employeeRepository.findAll(filter, pageable);
+}
+```
+
+**Request:**
+```
+GET /api/employees?department=eq:IT&salary=gte:50000&page=0&size=20
+```
+
+### Multiple Filters
+
+```java
+@GetMapping("/complex")
+public List<Transaction> getTransactions(
+    @QFParam(TransactionFilterDef.class) QueryFilter<Transaction> transactionFilter,
+    @QFParam(UserFilterDef.class) QueryFilter<User> userFilter
+) {
+    // Custom logic combining multiple filters
+    return transactionService.findByFilters(transactionFilter, userFilter);
+}
+```
+
+## Filter Definition Example
+
+```java
+@QFDefinitionClass(User.class)
+public class UserFilterDef {
+    
+    @QFElement("username")
+    private String username;
+    
+    @QFElement("age")
+    private Integer age;
+    
+    @QFElement("email")
+    private String email;
+    
+    @QFElement("department.name")
+    private String departmentName;
+}
+```
+
+## Working with the QueryFilter Object
+
+```java
+@GetMapping("/custom")
+public ResponseEntity<List<User>> getUsers(
+    @QFParam(UserFilterDef.class) QueryFilter<User> filter
+) {
+    // Get the predicate
+    Predicate predicate = filter.getPredicate();
+    
+    // Get sorting information
+    Sort sort = filter.getSort();
+    
+    // Check if specific fields are filtered
+    boolean hasUsernameFilter = filter.hasFilter("username");
+    
+    // Execute query
+    List<User> users = userRepository.findAll(predicate, sort);
+    
+    return ResponseEntity.ok(users);
+}
+```
+
+## Related Annotations
+
+- [`@QFMultiParam`](/api/annotations/qf-multi-param) - Handle multiple query string parameters
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define the filter class
+- [`@QFElement`](/api/annotations/qf-element) - Define filterable fields

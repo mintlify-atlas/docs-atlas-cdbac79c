@@ -1,0 +1,552 @@
+---
+title: Sorting
+description: Learn how to implement sorting with QueryFilterJPA for ordered query results
+---
+
+## Overview
+
+QueryFilterJPA provides flexible sorting capabilities that work seamlessly with filtering. You can sort by single or multiple fields, configure default sorting, and control sort order programmatically.
+
+## Single Field Sorting
+
+### Basic Syntax
+
+Sorting uses the `sort` query parameter with the following syntax:
+
+```bash
+# Ascending order (default)
+GET /posts?sort=+author
+GET /posts?sort=author      # + is optional for ascending
+
+# Descending order
+GET /posts?sort=-likes
+```
+
+### Sortable Fields
+
+To make a field sortable, use the `@QFSortable` annotation:
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    // Filterable AND sortable
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    // Only sortable (not filterable)
+    @QFSortable("lastTimestamp")
+    private Timestamp lastTimestamp;
+}
+```
+
+<Note>
+- `@QFElement` fields are automatically sortable AND filterable
+- `@QFSortable` fields are ONLY sortable (not filterable)
+- Use `@QFSortable` for fields you want to sort by but not filter
+</Note>
+
+### Usage Examples
+
+<Tabs>
+  <Tab title="Sort by Author">
+    ```bash
+    # Ascending alphabetically
+    GET /posts?sort=+author
+    
+    # Descending alphabetically
+    GET /posts?sort=-author
+    ```
+  </Tab>
+  <Tab title="Sort by Likes">
+    ```bash
+    # Most liked first
+    GET /posts?sort=-likes
+    
+    # Least liked first
+    GET /posts?sort=+likes
+    ```
+  </Tab>
+  <Tab title="Sort with Filters">
+    ```bash
+    # Combine filtering and sorting
+    GET /posts?filter=published=eq:true&sort=-likes
+    
+    # With @QFMultiParam
+    GET /posts?published=eq:true&sort=-likes
+    ```
+  </Tab>
+</Tabs>
+
+## Multi-Field Sorting
+
+### Syntax
+
+Sort by multiple fields using comma-separated values:
+
+```bash
+GET /posts?sort=-likes,+author,+lastTimestamp
+```
+
+This sorts by:
+1. `likes` descending (highest first)
+2. Then by `author` ascending (A-Z)
+3. Then by `lastTimestamp` ascending (oldest first)
+
+### Example Use Cases
+
+<Tabs>
+  <Tab title="Popular Posts">
+    ```bash
+    # Show most liked posts first, then by newest
+    GET /posts?sort=-likes,-createDate
+    ```
+  </Tab>
+  <Tab title="Author Ranking">
+    ```bash
+    # Group by author, show their best posts first
+    GET /posts?sort=+author,-likes
+    ```
+  </Tab>
+  <Tab title="Complex Sorting">
+    ```bash
+    # Published first, then by popularity, then alphabetically
+    GET /posts?sort=-published,-likes,+author
+    ```
+  </Tab>
+</Tabs>
+
+### Complete Example
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    @QFElement("published")
+    private boolean published;
+    
+    @QFSortable("lastTimestamp")
+    private Timestamp lastTimestamp;
+    
+    @QFSortable("createDate")
+    private LocalDateTime createDate;
+}
+```
+
+```bash
+# Multi-field sort with filters
+GET /posts?filter=author=like:John&sort=-published,- likes,+createDate
+```
+
+## Default Sorting
+
+### Configuration
+
+Define default sorting in your filter definition:
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.QFDefinitionClass.QFDefaultSort;
+
+@QFDefinitionClass(
+    value = PostBlog.class,
+    defaultSort = @QFDefaultSort("author")  // Default ascending by author
+)
+public class PostFilterDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    @QFSortable("lastTimestamp")
+    private Timestamp lastTimestamp;
+}
+```
+
+### Descending Default Sort
+
+```java
+@QFDefinitionClass(
+    value = PostBlog.class,
+    defaultSort = @QFDefaultSort(value = "likes", direction = Sort.Direction.DESC)
+)
+public class PostFilterDef {
+    // Most liked posts shown first by default
+    @QFElement("likes")
+    private int likes;
+}
+```
+
+### Multiple Default Sorts
+
+```java
+@QFDefinitionClass(
+    value = PostBlog.class,
+    defaultSort = {
+        @QFDefaultSort(value = "published", direction = Sort.Direction.DESC),
+        @QFDefaultSort(value = "likes", direction = Sort.Direction.DESC),
+        @QFDefaultSort(value = "author")
+    }
+)
+public class PostFilterDef {
+    // Default: published first, then by likes (high to low), then alphabetically
+}
+```
+
+### Behavior with Default Sorting
+
+<Tabs>
+  <Tab title="No Sort Parameter">
+    ```bash
+    # Uses default sort (author ascending)
+    GET /posts?filter=published=eq:true
+    ```
+    
+    Results are automatically sorted by the configured default.
+  </Tab>
+  <Tab title="Override Default">
+    ```bash
+    # Overrides default, sorts by likes instead
+    GET /posts?filter=published=eq:true&sort=-likes
+    ```
+    
+    The explicit `sort` parameter overrides the default.
+  </Tab>
+  <Tab title="Clear Default">
+    ```java
+    // Programmatically clear default sorting
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        "published=eq:true",
+        QFParamType.RHS_COLON
+    );
+    filter.clearSort();  // Removes all sorting, including default
+    ```
+  </Tab>
+</Tabs>
+
+## Programmatic Sorting
+
+### Building Sorts in Code
+
+You can manipulate sorting programmatically:
+
+```java
+@Service
+public class PostService {
+    
+    @Autowired
+    private QFProcessor<PostFilterDef, PostBlog> processor;
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    public List<PostBlog> getPopularPosts() {
+        // Create filter with sorting
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            "sort=-likes",
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+    
+    public List<PostBlog> getCustomSorted(String author) {
+        // Build filter string with sorting
+        String filterStr = String.format(
+            "author=eq:%s&sort=-likes,+lastTimestamp",
+            author
+        );
+        
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            filterStr,
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+}
+```
+
+### Checking Sort Status
+
+```java
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "sort=-likes,+author",
+    QFParamType.RHS_COLON
+);
+
+// Check if sorting is applied
+boolean isSorted = filter.isSorted();  // true
+
+// Check specific field
+boolean sortedByLikes = filter.isSortedBy("likes");      // true
+boolean sortedByTitle = filter.isSortedBy("title");      // false
+
+// Get sort fields with direction
+List<Pair<String, Direction>> sortFields = filter.getSortFields();
+// Returns: [("likes", DESC), ("author", ASC)]
+
+// Get full paths (useful for nested properties)
+List<Pair<String, Direction>> fullPaths = filter.getSortFieldWithFullPath();
+```
+
+### Manipulating Sorts
+
+```java
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "published=eq:true&sort=-likes",
+    QFParamType.RHS_COLON
+);
+
+// Clear all sorting
+filter.clearSort();
+assertThat(filter.isSorted()).isFalse();
+
+// Re-enable default sorting
+filter.setDefaultSortEnabled();
+assertThat(filter.isSorted()).isTrue();
+assertThat(filter.getSortFields()).containsExactly(
+    Pair.of("author", Direction.ASC)  // Assuming default sort is by author
+);
+```
+
+## Sorting Related Entities
+
+You can sort by properties of related entities:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    // Sort by comment properties
+    @QFElement("comments.author")
+    private String commentAuthor;
+    
+    @QFElement("comments.likes")
+    private int commentLikes;
+}
+```
+
+```bash
+# Sort posts by their comment authors
+GET /posts?sort=+comments.author
+
+# Sort by comment likes (descending)
+GET /posts?sort=-comments.likes
+```
+
+<Warning>
+Sorting by related entity fields may result in duplicate rows if the entity has multiple related records. Consider using distinct queries or limiting results appropriately.
+</Warning>
+
+## Advanced Examples
+
+### E-commerce Product Listing
+
+```java
+@QFDefinitionClass(
+    value = Product.class,
+    defaultSort = {
+        @QFDefaultSort(value = "featured", direction = Sort.Direction.DESC),
+        @QFDefaultSort(value = "averageRating", direction = Sort.Direction.DESC),
+        @QFDefaultSort(value = "price")
+    }
+)
+public class ProductFilterDef {
+    
+    @QFElement("category")
+    private String category;
+    
+    @QFElement("price")
+    private BigDecimal price;
+    
+    @QFElement("inStock")
+    private boolean inStock;
+    
+    @QFSortable("featured")
+    private boolean featured;
+    
+    @QFSortable("averageRating")
+    private double averageRating;
+    
+    @QFSortable("salesCount")
+    private int salesCount;
+}
+```
+
+Usage:
+
+```bash
+# Default: featured first, then by rating, then by price
+GET /products?category=eq:Electronics&inStock=eq:true
+
+# Sort by best sellers
+GET /products?category=eq:Electronics&sort=-salesCount
+
+# Sort by price (low to high)
+GET /products?category=eq:Electronics&inStock=eq:true&sort=+price
+
+# Complex sort: in stock first, then by rating, then by price
+GET /products?category=eq:Electronics&sort=-inStock,-averageRating,+price
+```
+
+### Blog Post with Custom Predicate Sorting
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+@QFPredicate(name = "popular", expression = "likes OR commentLikes")
+public class PostSortFilterDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    @QFElement("comments.likes")
+    private int commentLikes;
+    
+    @QFSortable("createDate")
+    private LocalDateTime createDate;
+}
+```
+
+```bash
+# Use predicate with sorting
+GET /posts?likes=gte:100&sort=-createDate
+```
+
+## Best Practices
+
+<Steps>
+
+### Use Meaningful Defaults
+
+Choose default sorting that matches user expectations:
+
+```java
+// Good: Latest posts first
+@QFDefaultSort(value = "createDate", direction = Sort.Direction.DESC)
+
+// Good: Alphabetical for directories
+@QFDefaultSort(value = "name")
+
+// Good: Most relevant for search results
+@QFDefaultSort(value = "relevanceScore", direction = Sort.Direction.DESC)
+```
+
+### Index Sorted Fields
+
+Always add database indexes on frequently sorted fields:
+
+```java
+@Entity
+@Table(indexes = {
+    @Index(name = "idx_author", columnList = "author"),
+    @Index(name = "idx_likes", columnList = "likes"),
+    @Index(name = "idx_create_date", columnList = "createDate")
+})
+public class PostBlog {
+    // ...
+}
+```
+
+### Limit Sortable Fields
+
+Only expose sortable fields that make sense:
+
+```java
+// Good: Useful sort fields
+@QFSortable("price")
+@QFSortable("rating")
+@QFSortable("salesCount")
+
+// Bad: Doesn't make sense to sort by these
+@QFSortable("description")  // Too long, not meaningful
+@QFSortable("uuid")         // Random, not useful
+```
+
+### Document Sort Options
+
+Clearly document available sort fields in your API documentation:
+
+```java
+/**
+ * Get all posts with optional filtering and sorting.
+ * 
+ * @param filter Query filter
+ * 
+ * Sortable fields:
+ * - author: Post author name
+ * - likes: Number of likes
+ * - createDate: Creation timestamp
+ * - lastTimestamp: Last update timestamp
+ * 
+ * Default sort: -createDate (newest first)
+ * 
+ * Examples:
+ * - GET /posts?sort=-likes (most liked first)
+ * - GET /posts?sort=+author,-createDate (by author, then newest)
+ */
+@GetMapping("/posts")
+public Page<Post> getPosts(
+    @QFMultiParam(PostFilterDef.class) QueryFilter<Post> filter,
+    Pageable pageable
+) {
+    return repository.findAll(filter, pageable);
+}
+```
+
+</Steps>
+
+## Common Patterns
+
+### Pagination with Sorting
+
+```java
+@GetMapping("/posts")
+public Page<PostDTO> getPosts(
+    @QFMultiParam(PostFilterDef.class) QueryFilter<PostBlog> filter,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "20") int size
+) {
+    Pageable pageable = PageRequest.of(page, size);
+    return repository.findAll(filter, pageable)
+        .map(postMapper::toDTO);
+}
+```
+
+```bash
+GET /posts?published=eq:true&sort=-likes&page=0&size=20
+```
+
+### Conditional Default Sorting
+
+```java
+public List<PostBlog> getPosts(QueryFilter<PostBlog> filter, boolean useDefault) {
+    if (!useDefault && filter.isSorted()) {
+        filter.clearSort();
+    }
+    return repository.findAll(filter);
+}
+```
+
+## Next Steps
+
+- Learn about [Custom Predicates](/guides/custom-predicates) for complex filtering
+- Explore [SpEL Expressions](/guides/spel-expressions) for dynamic filters
+- Check [Basic Filtering](/guides/basic-filtering) for filter operations

@@ -1,0 +1,677 @@
+---
+title: PostgreSQL Arrays
+description: Filter PostgreSQL array columns with QueryFilterJPA using arrayTyped configuration
+---
+
+## Overview
+
+QueryFilterJPA provides specialized support for filtering PostgreSQL array columns. Using the `arrayTyped` parameter, you can perform array operations like overlap, contains, and equality checks on array fields.
+
+<Note>
+This feature is specifically designed for PostgreSQL array types. If you're using a different database, check your database's array support compatibility.
+</Note>
+
+## Setting Up Array Fields
+
+### Entity Definition
+
+First, define your entity with PostgreSQL array columns:
+
+```java
+import io.hypersistence.utils.hibernate.type.array.StringArrayType;
+import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+
+@Entity
+public class PostBlog {
+    
+    @Id
+    private UUID uuid;
+    
+    private String title;
+    private String author;
+    
+    // PostgreSQL array column
+    @Type(StringArrayType.class)
+    @Column(columnDefinition = "text[]")
+    private String[] tags;
+    
+    // getters and setters
+}
+```
+
+<Note>
+This example uses the `hibernate-types` library for PostgreSQL array support. Add it to your dependencies:
+
+```xml
+<dependency>
+    <groupId>io.hypersistence</groupId>
+    <artifactId>hypersistence-utils-hibernate-63</artifactId>
+    <version>3.7.0</version>
+</dependency>
+```
+</Note>
+
+### Filter Definition
+
+Create a filter with `arrayTyped = true`:
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+public class PostArrayFilterDef {
+    
+    @QFElement(value = "tags", arrayTyped = true)
+    private String tags;
+}
+```
+
+The `arrayTyped = true` parameter enables array-specific operations.
+
+## Array Operations
+
+When `arrayTyped = true`, you gain access to specialized array operations:
+
+| Operation | Syntax | Description | Example |
+|-----------|--------|-------------|----------|
+| Overlap | `ovlp` | Array has ANY of the values | `tags=ovlp:Java,Python` |
+| Contains (IN) | `in` | Array contains ALL values | `tags=in:Java,Spring` |
+| Not Contains | `nin` | Array doesn't contain ALL values | `tags=nin:Legacy,Deprecated` |
+| Equal | `eq` | Exact array match | `tags=eq:Java,Spring,Boot` |
+| Not Equal | `ne` | Not exact match | `tags=ne:Java,Spring` |
+| Contained By | `containedBy` | Array is subset of values | `tags=containedBy:Java,Python,Go` |
+| Greater Than | `gt` | Array contains more than values | `tags=gt:Java,Spring` |
+| Less Than | `lt` | Array contains fewer than values | `tags=lt:Java` |
+| Not Overlap | `novlp` | Array has NONE of the values | `tags=novlp:Legacy` |
+
+## Usage Examples
+
+### Overlap Operation
+
+Find posts with ANY of the specified tags:
+
+```bash
+# Find posts tagged with Java OR Python
+GET /posts?tags=ovlp:Java,Python
+
+# Find posts with at least one of these tags
+GET /posts?tags=ovlp:Spring,React,Angular
+```
+
+**Entity matches:**
+```java
+// Matches
+post.tags = ["Java", "Spring", "Boot"]
+post.tags = ["Python", "Django"]
+post.tags = ["Java", "Python", "Go"]
+
+// Doesn't match
+post.tags = ["Go", "Rust"]
+post.tags = ["JavaScript", "TypeScript"]
+```
+
+### Contains (IN) Operation
+
+Find posts containing ALL specified tags:
+
+```bash
+# Find posts that have BOTH Java AND Spring
+GET /posts?tags=in:Java,Spring
+```
+
+**Entity matches:**
+```java
+// Matches (contains both Java and Spring)
+post.tags = ["Java", "Spring", "Boot"]
+post.tags = ["Java", "Spring", "Hibernate", "REST"]
+
+// Doesn't match (missing one or both)
+post.tags = ["Java", "Hibernate"]  // Missing Spring
+post.tags = ["Spring", "Boot"]     // Missing Java
+post.tags = ["Python", "Django"]   // Missing both
+```
+
+### Exact Match (Equal)
+
+Find posts with exactly the specified tags:
+
+```bash
+# Find posts with exactly these tags (order doesn't matter)
+GET /posts?tags=eq:Java,Spring,Boot
+```
+
+**Entity matches:**
+```java
+// Matches (exact set, any order)
+post.tags = ["Java", "Spring", "Boot"]
+post.tags = ["Boot", "Java", "Spring"]
+post.tags = ["Spring", "Boot", "Java"]
+
+// Doesn't match (different tags)
+post.tags = ["Java", "Spring"]           // Missing Boot
+post.tags = ["Java", "Spring", "Boot", "Hibernate"]  // Extra tag
+post.tags = ["Python", "Django", "REST"]
+```
+
+<Note>
+Array equality doesn't consider order. `["A", "B", "C"]` equals `["C", "A", "B"]`.
+</Note>
+
+### Contained By Operation
+
+Find posts where the array is a subset of the specified values:
+
+```bash
+# Find posts where ALL tags are in this list
+GET /posts?tags=containedBy:Java,Python,Go,Rust,JavaScript
+```
+
+**Entity matches:**
+```java
+// Matches (all tags are in the list)
+post.tags = ["Java", "Go"]
+post.tags = ["Python"]
+post.tags = ["Java", "Rust", "Go"]
+
+// Doesn't match (contains tag not in list)
+post.tags = ["Java", "C++"]      // C++ not in list
+post.tags = ["TypeScript", "Go"] // TypeScript not in list
+```
+
+### Not Overlap Operation
+
+Find posts that have NONE of the specified tags:
+
+```bash
+# Find posts that don't have Legacy or Deprecated tags
+GET /posts?tags=novlp:Legacy,Deprecated
+```
+
+**Entity matches:**
+```java
+// Matches (no overlap with Legacy or Deprecated)
+post.tags = ["Java", "Spring", "Modern"]
+post.tags = ["Python", "FastAPI"]
+
+// Doesn't match (has at least one)
+post.tags = ["Legacy", "Java"]        // Has Legacy
+post.tags = ["Deprecated", "Spring"]  // Has Deprecated
+post.tags = ["Legacy", "Deprecated"]  // Has both
+```
+
+## Complete Example
+
+### Entity
+
+```java
+import io.hypersistence.utils.hibernate.type.array.StringArrayType;
+import jakarta.persistence.*;
+import org.hibernate.annotations.Type;
+
+@Entity
+@Table(name = "posts")
+public class PostBlog {
+    
+    @Id
+    private UUID uuid;
+    
+    private String author;
+    private String title;
+    private int likes;
+    private LocalDateTime createDate;
+    
+    @Type(StringArrayType.class)
+    @Column(columnDefinition = "text[]")
+    private String[] tags;
+    
+    @Type(StringArrayType.class)
+    @Column(columnDefinition = "text[]")
+    private String[] categories;
+    
+    // getters and setters
+}
+```
+
+### Filter Definition
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+public class PostArrayFilterDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    @QFElement(value = "tags", arrayTyped = true)
+    private String tags;
+    
+    @QFElement(value = "categories", arrayTyped = true)
+    private String categories;
+}
+```
+
+### Controller
+
+```java
+@RestController
+@RequestMapping("/posts")
+public class PostController {
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    @GetMapping
+    public List<PostDTO> getPosts(
+        @QFMultiParam(PostArrayFilterDef.class) QueryFilter<PostBlog> filter
+    ) {
+        return repository.findAll(filter)
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+}
+```
+
+### Usage Examples
+
+<Tabs>
+  <Tab title="Find Java Posts">
+    ```bash
+    # Posts with Java tag
+    GET /posts?tags=ovlp:Java
+    ```
+  </Tab>
+  <Tab title="Find Spring Boot Posts">
+    ```bash
+    # Posts with both Spring and Boot tags
+    GET /posts?tags=in:Spring,Boot
+    ```
+  </Tab>
+  <Tab title="Popular Tech Posts">
+    ```bash
+    # Popular posts about Java, Python, or Go
+    GET /posts?tags=ovlp:Java,Python,Go&likes=gte:100
+    ```
+  </Tab>
+  <Tab title="Specific Category">
+    ```bash
+    # Tutorial posts about Spring
+    GET /posts?categories=in:Tutorial&tags=ovlp:Spring
+    ```
+  </Tab>
+  <Tab title="Exclude Legacy">
+    ```bash
+    # Modern posts (no legacy tags)
+    GET /posts?tags=novlp:Legacy,Deprecated,Old
+    ```
+  </Tab>
+</Tabs>
+
+## Combining Array Filters
+
+You can combine multiple array filters:
+
+```bash
+# Posts about Java OR Python, in Tutorial category, popular
+GET /posts?tags=ovlp:Java,Python&categories=in:Tutorial&likes=gte:50
+
+# Spring Boot posts, not legacy
+GET /posts?tags=in:Spring,Boot&tags=novlp:Legacy,Deprecated
+```
+
+## Advanced Use Cases
+
+### Multi-Tag Search
+
+```java
+@Service
+public class PostSearchService {
+    
+    @Autowired
+    private QFProcessor<PostArrayFilterDef, PostBlog> processor;
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    public List<PostBlog> findByTags(List<String> tags, boolean matchAll) {
+        String tagList = String.join(",", tags);
+        String operation = matchAll ? "in" : "ovlp";
+        
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            String.format("tags=%s:%s", operation, tagList),
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+    
+    public List<PostBlog> findExcludingTags(List<String> excludeTags) {
+        String tagList = String.join(",", excludeTags);
+        
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            String.format("tags=novlp:%s", tagList),
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+}
+```
+
+### Tag-Based Recommendations
+
+```java
+public List<PostBlog> findSimilarPosts(PostBlog post) {
+    // Find posts with overlapping tags
+    String tagList = String.join(",", post.getTags());
+    
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        String.format("tags=ovlp:%s", tagList),
+        QFParamType.RHS_COLON
+    );
+    
+    return repository.findAll(filter)
+        .stream()
+        .filter(p -> !p.getUuid().equals(post.getUuid()))  // Exclude original
+        .limit(10)
+        .collect(Collectors.toList());
+}
+```
+
+### Category Filtering
+
+```java
+public List<PostBlog> findInCategories(
+    List<String> requiredCategories,
+    List<String> optionalTags
+) {
+    String categories = String.join(",", requiredCategories);
+    String tags = String.join(",", optionalTags);
+    
+    // Must be in ALL required categories, with ANY optional tags
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        String.format(
+            "categories=in:%s&tags=ovlp:%s",
+            categories, tags
+        ),
+        QFParamType.RHS_COLON
+    );
+    
+    return repository.findAll(filter);
+}
+```
+
+## Array Size Operations
+
+### Greater Than (More Items)
+
+Find arrays larger than the comparison set:
+
+```bash
+# Find posts with more tags than just "Java" and "Spring"
+GET /posts?tags=gt:Java,Spring
+```
+
+**Matches:** Arrays with MORE than 2 tags that INCLUDE those tags
+
+```java
+// Matches (has 3+ tags including Java and Spring)
+post.tags = ["Java", "Spring", "Boot"]  // 3 tags
+post.tags = ["Java", "Spring", "Hibernate", "JPA"]  // 4 tags
+
+// Doesn't match
+post.tags = ["Java", "Spring"]  // Exactly 2 tags
+post.tags = ["Python"]  // Different tag
+```
+
+### Less Than (Fewer Items)
+
+```bash
+# Find posts with simple tag sets
+GET /posts?tags=lt:Tag1,Tag2,Tag3,Tag4,Tag5
+```
+
+## Testing Array Filters
+
+### Unit Test Example
+
+```java
+@SpringBootTest
+class PostArrayFilterTest {
+    
+    @Autowired
+    private QFProcessor<PostArrayFilterDef, PostBlog> processor;
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    @Test
+    void testOverlapOperation() {
+        // Setup test data
+        PostBlog post1 = createPost(tags: ["Java", "Spring", "Boot"]);
+        PostBlog post2 = createPost(tags: ["Python", "Django"]);
+        PostBlog post3 = createPost(tags: ["Go", "Gin"]);
+        
+        repository.saveAll(List.of(post1, post2, post3));
+        
+        // Test overlap filter
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            "tags=ovlp:Java,Python",
+            QFParamType.RHS_COLON
+        );
+        
+        List<PostBlog> results = repository.findAll(filter);
+        
+        assertThat(results)
+            .hasSize(2)
+            .containsExactlyInAnyOrder(post1, post2);
+    }
+    
+    @Test
+    void testContainsAllOperation() {
+        PostBlog post = createPost(tags: ["Java", "Spring", "Boot", "JPA"]);
+        repository.save(post);
+        
+        // Should find post (contains both Java and Spring)
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            "tags=in:Java,Spring",
+            QFParamType.RHS_COLON
+        );
+        
+        List<PostBlog> results = repository.findAll(filter);
+        assertThat(results).containsExactly(post);
+        
+        // Should NOT find post (doesn't contain Python)
+        filter = processor.newQueryFilter(
+            "tags=in:Java,Python",
+            QFParamType.RHS_COLON
+        );
+        
+        results = repository.findAll(filter);
+        assertThat(results).isEmpty();
+    }
+}
+```
+
+## Performance Considerations
+
+### Database Indexes
+
+Create GIN (Generalized Inverted Index) indexes for better performance:
+
+```sql
+-- Create GIN index on tags array
+CREATE INDEX idx_posts_tags ON posts USING GIN (tags);
+
+-- Create GIN index on categories array
+CREATE INDEX idx_posts_categories ON posts USING GIN (categories);
+```
+
+### JPA Entity Indexes
+
+```java
+@Entity
+@Table(
+    name = "posts",
+    indexes = {
+        @Index(
+            name = "idx_posts_tags",
+            columnList = "tags",
+            // PostgreSQL-specific: GIN index
+        )
+    }
+)
+public class PostBlog {
+    // ...
+}
+```
+
+<Note>
+For Hibernate to create GIN indexes, you may need database-specific configuration or create them via migration scripts.
+</Note>
+
+## Best Practices
+
+<Steps>
+
+### Use Appropriate Operations
+
+```bash
+# Good: Use overlap for "any of"
+GET /posts?tags=ovlp:Java,Python,Go
+
+# Good: Use contains for "all of"
+GET /posts?tags=in:Spring,Boot
+
+# Bad: Using equal for partial match
+GET /posts?tags=eq:Java  # Only finds posts with ONLY Java tag
+```
+
+### Keep Arrays Reasonably Sized
+
+```java
+// Good: Limited, focused tags
+post.tags = ["Java", "Spring", "REST", "Microservices"]
+
+// Bad: Too many tags, reduces filter effectiveness
+post.tags = ["Java", "Spring", "Boot", "REST", "API", "Microservices", 
+             "Cloud", "Docker", "Kubernetes", ...]
+```
+
+### Index Frequently Queried Arrays
+
+Always create GIN indexes on array columns used in filters:
+
+```sql
+CREATE INDEX idx_posts_tags ON posts USING GIN (tags);
+```
+
+### Validate Array Input
+
+```java
+@Service
+public class PostService {
+    
+    public List<PostBlog> findByTags(List<String> tags) {
+        // Validate input
+        if (tags == null || tags.isEmpty()) {
+            throw new IllegalArgumentException("Tags cannot be empty");
+        }
+        
+        if (tags.size() > 10) {
+            throw new IllegalArgumentException("Too many tags (max 10)");
+        }
+        
+        // Build filter
+        String tagList = tags.stream()
+            .map(String::trim)
+            .filter(t -> !t.isEmpty())
+            .collect(Collectors.joining(","));
+        
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            String.format("tags=ovlp:%s", tagList),
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+}
+```
+
+</Steps>
+
+## Common Patterns
+
+### Tag Cloud / Faceted Search
+
+```java
+public Map<String, Long> getTagCounts(QueryFilter<PostBlog> baseFilter) {
+    List<PostBlog> posts = repository.findAll(baseFilter);
+    
+    return posts.stream()
+        .flatMap(post -> Arrays.stream(post.getTags()))
+        .collect(Collectors.groupingBy(
+            Function.identity(),
+            Collectors.counting()
+        ));
+}
+```
+
+### Multi-Criteria Search
+
+```java
+public List<PostBlog> advancedSearch(
+    List<String> anyTags,
+    List<String> allCategories,
+    List<String> excludeTags,
+    int minLikes
+) {
+    StringBuilder filterStr = new StringBuilder();
+    
+    if (!anyTags.isEmpty()) {
+        filterStr.append("tags=ovlp:").append(String.join(",", anyTags));
+    }
+    
+    if (!allCategories.isEmpty()) {
+        if (filterStr.length() > 0) filterStr.append("&");
+        filterStr.append("categories=in:").append(String.join(",", allCategories));
+    }
+    
+    if (!excludeTags.isEmpty()) {
+        if (filterStr.length() > 0) filterStr.append("&");
+        filterStr.append("tags=novlp:").append(String.join(",", excludeTags));
+    }
+    
+    if (minLikes > 0) {
+        if (filterStr.length() > 0) filterStr.append("&");
+        filterStr.append("likes=gte:").append(minLikes);
+    }
+    
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        filterStr.toString(),
+        QFParamType.RHS_COLON
+    );
+    
+    return repository.findAll(filter);
+}
+```
+
+## Limitations
+
+<Warning>
+- Array filtering requires PostgreSQL or a database with array support
+- Not all databases support all array operations
+- Performance may degrade with very large arrays
+- Nested array filtering is not directly supported
+</Warning>
+
+## Next Steps
+
+- Learn about [JSON Filtering](/guides/json-filtering) for JSON column operations
+- Explore [Custom Predicates](/guides/custom-predicates) to combine array filters
+- Check [Basic Filtering](/guides/basic-filtering) for standard operations

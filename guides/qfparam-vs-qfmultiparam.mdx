@@ -1,0 +1,389 @@
+---
+title: QFParam vs QFMultiParam
+description: Understand the differences between @QFParam and @QFMultiParam annotations and when to use each
+---
+
+## Overview
+
+QueryFilterJPA provides two annotation options for binding query filters to controller parameters: `@QFParam` and `@QFMultiParam`. Each serves different use cases based on your API design preferences.
+
+## @QFParam - Single Parameter Style
+
+### Description
+
+`@QFParam` expects all filters to be passed in a **single query parameter**. This is the traditional approach where all filter conditions are combined into one parameter value.
+
+### Syntax
+
+```java
+@GetMapping("/posts")
+public Page<PostDTO> getPosts(
+    @QFParam(PostFilterDef.class) 
+    @RequestParam(required = false, defaultValue = "", name = "filter") 
+    QueryFilter<PostBlog> filter,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "10") int size
+) {
+    Pageable pageable = PageRequest.of(page, size);
+    return repository.findAll(filter, pageable);
+}
+```
+
+### URL Examples
+
+<Tabs>
+  <Tab title="Single Filter">
+    ```bash
+    GET /posts?filter=author=eq:John
+    ```
+  </Tab>
+  <Tab title="Multiple Filters">
+    ```bash
+    GET /posts?filter=author=eq:John&likes=gt:50&published=eq:true
+    ```
+  </Tab>
+  <Tab title="Complex Example">
+    ```bash
+    GET /posts?filter=author=in:John,Jane,Bob&likes=gte:100&createDate=gt:2024-01-01
+    ```
+  </Tab>
+</Tabs>
+
+### When to Use @QFParam
+
+<Note>
+Use `@QFParam` when:
+- You want a single, dedicated filter parameter
+- You need to clearly separate filtering from other query parameters
+- You prefer explicit naming (e.g., `filter=...`)
+- You want backward compatibility with older API designs
+</Note>
+
+### Advantages
+
+- **Clear separation**: Filter logic is isolated in one parameter
+- **Named parameter**: You control the parameter name (e.g., `filter`, `query`, etc.)
+- **Explicit intent**: Makes it obvious which parameter handles filtering
+- **Easy to document**: Single parameter to explain in API docs
+
+### Disadvantages
+
+- **Longer URLs**: All conditions in one parameter can create long query strings
+- **URL encoding**: Complex filters require more URL encoding
+- **Less intuitive**: Users need to learn the filtering syntax
+
+## @QFMultiParam - Multiple Parameters Style
+
+### Description
+
+`@QFMultiParam` allows filters to be passed as **individual query parameters**. Each filter field becomes its own parameter, making the URL more readable and intuitive.
+
+### Syntax
+
+```java
+@GetMapping("/posts")
+public Page<PostDTO> getPosts(
+    @QFMultiParam(PostFilterDef.class) 
+    QueryFilter<PostBlog> filter,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "10") int size
+) {
+    Pageable pageable = PageRequest.of(page, size);
+    return repository.findAll(filter, pageable);
+}
+```
+
+<Note>
+Notice that `@QFMultiParam` doesn't require `@RequestParam` - it automatically binds to query parameters.
+</Note>
+
+### URL Examples
+
+<Tabs>
+  <Tab title="RHS Colon Style">
+    ```bash
+    # Single filter
+    GET /posts?author=eq:John
+    
+    # Multiple filters
+    GET /posts?author=eq:John&likes=gt:50&published=eq:true
+    
+    # With IN operation
+    GET /posts?author=in:John,Jane,Bob&likes=gte:100
+    ```
+  </Tab>
+  <Tab title="LHS Brackets Style">
+    ```bash
+    # Single filter
+    GET /posts?author[eq]=John
+    
+    # Multiple filters
+    GET /posts?author[eq]=John&likes[gt]=50&published[eq]=true
+    
+    # With IN operation
+    GET /posts?author[in]=John,Jane,Bob&likes[gte]=100
+    ```
+  </Tab>
+</Tabs>
+
+### Parameter Type Styles
+
+QueryFilterJPA supports two parameter type styles:
+
+#### RHS Colon (Right-Hand Side)
+
+```bash
+GET /posts?author=eq:John&likes=gt:50
+```
+
+- Operation on the right side of equals
+- Separated by colon
+- More compact syntax
+
+#### LHS Brackets (Left-Hand Side)
+
+```bash
+GET /posts?author[eq]=John&likes[gt]=50
+```
+
+- Operation in brackets before equals
+- Similar to Laravel/Rails conventions
+- More familiar to some developers
+
+### When to Use @QFMultiParam
+
+<Note>
+Use `@QFMultiParam` when:
+- You want a more RESTful, readable URL structure
+- Your API consumers prefer individual parameters
+- You want to align with common API patterns
+- You're building a public API where usability matters
+</Note>
+
+### Advantages
+
+- **Cleaner URLs**: Each filter is a separate parameter
+- **More intuitive**: Easier for developers to understand
+- **Better readability**: Filters read like natural query parameters
+- **Flexible syntax**: Support for both colon and bracket styles
+- **Auto-completion friendly**: IDEs can better suggest parameters
+
+### Disadvantages
+
+- **Parameter collision**: Filter fields can't have same names as other parameters
+- **Less explicit**: Not immediately obvious which params are filters
+- **Reserved keywords**: Need to avoid conflicts with pagination, sorting, etc.
+
+## Comparison Table
+
+| Feature | @QFParam | @QFMultiParam |
+|---------|----------|---------------|
+| **URL Style** | Single parameter | Multiple parameters |
+| **Example** | `?filter=author=eq:John&likes=gt:50` | `?author=eq:John&likes=gt:50` |
+| **Parameter Name** | Custom (you choose) | Auto-mapped from fields |
+| **URL Length** | Can be longer | Generally shorter |
+| **Readability** | Requires syntax knowledge | More intuitive |
+| **Separation** | Explicit separation | Mixed with other params |
+| **Syntax Styles** | RHS Colon only | RHS Colon or LHS Brackets |
+| **Use Case** | Internal APIs, complex filters | Public APIs, simple filters |
+
+## Use Case Comparison
+
+### Example: Blog Post API
+
+Let's see how the same filters look with both approaches:
+
+<Tabs>
+  <Tab title="@QFParam">
+    ```java
+    @GetMapping("/api/posts")
+    public Page<Post> getPosts(
+        @QFParam(PostFilterDef.class)
+        @RequestParam(required = false, defaultValue = "", name = "filter")
+        QueryFilter<Post> filter,
+        Pageable pageable
+    ) {
+        return postService.findAll(filter, pageable);
+    }
+    ```
+    
+    **Usage:**
+    ```bash
+    GET /api/posts?filter=author=eq:John&filter=published=eq:true&filter=likes=gte:100
+    ```
+  </Tab>
+  <Tab title="@QFMultiParam">
+    ```java
+    @GetMapping("/api/posts")
+    public Page<Post> getPosts(
+        @QFMultiParam(PostFilterDef.class)
+        QueryFilter<Post> filter,
+        Pageable pageable
+    ) {
+        return postService.findAll(filter, pageable);
+    }
+    ```
+    
+    **Usage:**
+    ```bash
+    # RHS Colon style
+    GET /api/posts?author=eq:John&published=eq:true&likes=gte:100
+    
+    # LHS Brackets style
+    GET /api/posts?author[eq]=John&published[eq]=true&likes[gte]=100
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+### For @QFParam
+
+<Steps>
+
+1. **Use descriptive parameter names**
+   ```java
+   @RequestParam(name = "filter") // Clear and concise
+   @RequestParam(name = "q")      // Too short, unclear
+   ```
+
+2. **Make it optional with sensible defaults**
+   ```java
+   @RequestParam(required = false, defaultValue = "")
+   ```
+
+3. **Document the filter syntax**
+   - Provide examples in your API documentation
+   - Show common filter patterns
+   - List available operations
+
+</Steps>
+
+### For @QFMultiParam
+
+<Steps>
+
+1. **Avoid parameter name conflicts**
+   ```java
+   // Bad: 'page' is also used for pagination
+   @QFElement("page")
+   private String page;
+   
+   // Good: Use specific field names
+   @QFElement("pageNumber")
+   private String pageNumber;
+   ```
+
+2. **Choose one parameter style and stick with it**
+   - Don't mix RHS Colon and LHS Brackets in the same API
+   - Document which style your API uses
+
+3. **Reserve common parameter names**
+   - Avoid filter fields named: `page`, `size`, `sort`
+   - Keep standard pagination/sorting parameters separate
+
+</Steps>
+
+## Switching Between Styles
+
+You can easily switch between `@QFParam` and `@QFMultiParam` without changing your filter definition:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    // ... same definition works for both!
+}
+```
+
+<Warning>
+Changing from `@QFParam` to `@QFMultiParam` (or vice versa) is a **breaking API change** for your consumers. Plan migrations carefully.
+</Warning>
+
+## Real-World Examples
+
+### E-commerce Product Search
+
+<Tabs>
+  <Tab title="@QFParam - B2B API">
+    ```java
+    // Good for complex B2B integrations
+    @GetMapping("/api/products")
+    public List<Product> search(
+        @QFParam(ProductFilterDef.class)
+        @RequestParam(name = "query") QueryFilter<Product> filter
+    ) {
+        return productService.search(filter);
+    }
+    ```
+    
+    ```bash
+    GET /api/products?query=category=eq:Electronics&price=gte:100&price=lte:500&inStock=eq:true
+    ```
+  </Tab>
+  <Tab title="@QFMultiParam - Consumer API">
+    ```java
+    // Better for consumer-facing applications
+    @GetMapping("/products")
+    public List<Product> search(
+        @QFMultiParam(ProductFilterDef.class) QueryFilter<Product> filter
+    ) {
+        return productService.search(filter);
+    }
+    ```
+    
+    ```bash
+    GET /products?category=eq:Electronics&price[gte]=100&price[lte]=500&inStock=eq:true
+    ```
+  </Tab>
+</Tabs>
+
+## Migration Guide
+
+If you need to migrate from one style to another:
+
+### From @QFParam to @QFMultiParam
+
+```java
+// Before
+@GetMapping("/posts")
+public Page<Post> getPosts(
+    @QFParam(PostFilterDef.class)
+    @RequestParam(name = "filter") QueryFilter<Post> filter
+) { ... }
+
+// After
+@GetMapping("/posts")
+public Page<Post> getPosts(
+    @QFMultiParam(PostFilterDef.class) QueryFilter<Post> filter
+) { ... }
+```
+
+### Supporting Both During Transition
+
+```java
+@GetMapping("/posts")
+public Page<Post> getPosts(
+    @QFParam(PostFilterDef.class)
+    @RequestParam(required = false, name = "filter") QueryFilter<Post> legacyFilter,
+    @QFMultiParam(PostFilterDef.class) QueryFilter<Post> newFilter,
+    Pageable pageable
+) {
+    // Use new filter if present, otherwise fall back to legacy
+    QueryFilter<Post> activeFilter = 
+        (newFilter != null && newFilter.isFiltering()) ? newFilter : legacyFilter;
+    
+    return repository.findAll(activeFilter, pageable);
+}
+```
+
+## Next Steps
+
+- Learn about [Sorting](/guides/sorting) options for ordered results
+- Explore [Custom Predicates](/guides/custom-predicates) for complex logic
+- Check [Basic Filtering](/guides/basic-filtering) for operation details

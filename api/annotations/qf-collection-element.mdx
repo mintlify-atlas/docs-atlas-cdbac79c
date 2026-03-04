@@ -1,0 +1,367 @@
+---
+title: "@QFCollectionElement"
+description: "Filter collection properties in JPA entities"
+---
+
+## Overview
+
+`@QFCollectionElement` is a specialized annotation for filtering based on collection sizes in JPA entities. It enables querying based on the number of elements in a collection relationship (e.g., OneToMany, ManyToMany).
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target({ FIELD, ANNOTATION_TYPE })
+public @interface QFCollectionElement
+```
+
+## Properties
+
+<ParamField path="value" type="String" required>
+  Path to the collection property in the entity.
+  
+  This is the full path from the entity root to the collection you want to filter by size.
+  
+  Example: `"orders"`, `"user.posts"`, `"department.employees"`
+</ParamField>
+
+<ParamField path="name" type="String" default="(empty string)">
+  Custom name to use in filter queries.
+  
+  If not specified, the field name from the filter definition class will be used.
+</ParamField>
+
+<ParamField path="subClassMapping" type="Class<?>" default="Void.class">
+  Map this collection to a specific subclass in inheritance hierarchies.
+  
+  Used when the collection only exists in a discriminator subclass.
+</ParamField>
+
+<ParamField path="subClassMappingPath" type="String" default="(empty string)">
+  Path to apply subclass mapping.
+  
+  Must be used together with `subClassMapping`.
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{ JoinType.INNER }">
+  Specify join types for nested property paths.
+  
+  - Single value: applied to all joins
+  - Multiple values: first value for first join, last value for remaining joins
+  
+  Example: `{LEFT, INNER}` - first join is LEFT, rest are INNER
+</ParamField>
+
+<ParamField path="allowedOperations" type="QFCollectionOperationEnum[]" default="{}">
+  Restrict which collection operations are allowed for this element.
+  
+  If empty, all operations are allowed. Available operations:
+  - `EQUAL` - Collection size equals value
+  - `NOT_EQUAL` - Collection size not equal to value
+  - `GREATER_THAN` - Collection size greater than value
+  - `GREATER_EQUAL_THAN` - Collection size greater than or equal to value
+  - `LESS_THAN` - Collection size less than value
+  - `LESS_EQUAL_THAN` - Collection size less than or equal to value
+</ParamField>
+
+<ParamField path="defaultValue" type="int" default="Integer.MIN_VALUE">
+  Default collection size value to use if the filter is not specified.
+  
+  If set to `Integer.MIN_VALUE` (default), no default filter is applied.
+</ParamField>
+
+<ParamField path="defaultOperation" type="QFCollectionOperationEnum" default="EQUAL">
+  Default operation to use with `defaultValue`.
+  
+  Only applied if `defaultValue` is not `Integer.MIN_VALUE`.
+</ParamField>
+
+<ParamField path="order" type="int" default="0">
+  Processing order for this filter element.
+  
+  Lower numbers are processed first.
+</ParamField>
+
+## Usage Examples
+
+### Basic Collection Size Filter
+
+```java
+// Entity
+@Entity
+public class Author {
+    @Id
+    private Long id;
+    
+    private String name;
+    
+    @OneToMany(mappedBy = "author")
+    private List<Book> books;
+}
+
+// Filter Definition
+@QFDefinitionClass(Author.class)
+public class AuthorFilterDef {
+    
+    @QFCollectionElement("books")
+    private int bookCount;
+}
+```
+
+**Usage:**
+```
+GET /api/authors?bookCount=gt:5
+// Find authors with more than 5 books
+```
+
+### Nested Collection Filter
+
+```java
+@Entity
+public class Department {
+    @Id
+    private Long id;
+    
+    @OneToMany
+    private List<Employee> employees;
+}
+
+@Entity
+public class Company {
+    @Id
+    private Long id;
+    
+    @OneToMany
+    private List<Department> departments;
+}
+
+@QFDefinitionClass(Company.class)
+public class CompanyFilterDef {
+    
+    @QFCollectionElement("departments")
+    private int departmentCount;
+}
+```
+
+**Usage:**
+```
+GET /api/companies?departmentCount=gte:10
+// Find companies with 10 or more departments
+```
+
+### Limited Operations
+
+```java
+@QFCollectionElement(
+    value = "orders",
+    allowedOperations = {
+        QFCollectionOperationEnum.GREATER_THAN,
+        QFCollectionOperationEnum.GREATER_EQUAL_THAN
+    }
+)
+private int orderCount;
+```
+
+**Valid:**
+```
+GET /api/customers?orderCount=gt:10
+GET /api/customers?orderCount=gte:5
+```
+
+**Invalid (will throw error):**
+```
+GET /api/customers?orderCount=lt:3
+```
+
+### Default Collection Size Filter
+
+```java
+@QFCollectionElement(
+    value = "activeProjects",
+    defaultValue = 0,
+    defaultOperation = QFCollectionOperationEnum.GREATER_THAN
+)
+private int activeProjectCount;
+```
+
+When no filter is provided, defaults to finding entities with more than 0 active projects.
+
+### Subclass Collection Filtering
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public class ParentEntity {
+    @Id
+    private Long id;
+}
+
+@Entity
+public class SubclassAEntity extends ParentEntity {
+    @OneToMany
+    private List<Link> links;
+}
+
+@QFDefinitionClass(ParentEntity.class)
+public class ParentEntityFilterDef {
+    
+    @QFCollectionElement(
+        value = "links",
+        subClassMapping = SubclassAEntity.class
+    )
+    private int linkCount;
+}
+```
+
+**Usage:**
+```
+GET /api/entities?linkCount=eq:0
+// Find SubclassA entities with no links
+```
+
+### Multiple Collection Filters
+
+```java
+@QFDefinitionClass(User.class)
+public class UserFilterDef {
+    
+    @QFElement("username")
+    private String username;
+    
+    @QFCollectionElement(value = "posts", name = "postCount")
+    private int postCount;
+    
+    @QFCollectionElement(value = "followers", name = "followerCount")
+    private int followerCount;
+    
+    @QFCollectionElement(value = "following", name = "followingCount")
+    private int followingCount;
+}
+```
+
+**Usage:**
+```
+GET /api/users?postCount=gt:10&followerCount=gte:100&followingCount=lte:50
+// Find users with >10 posts, >=100 followers, and <=50 following
+```
+
+### Using LEFT JOIN
+
+```java
+@QFCollectionElement(
+    value = "optionalRelationships",
+    joinTypes = {JoinType.LEFT}
+)
+private int optionalCount;
+```
+
+This includes entities even if they have no items in the collection.
+
+### Complex Query Example
+
+```java
+@Entity
+public class Project {
+    @Id
+    private Long id;
+    
+    private String name;
+    
+    @OneToMany
+    private List<Task> tasks;
+    
+    @ManyToMany
+    private List<User> members;
+}
+
+@QFDefinitionClass(Project.class)
+public class ProjectFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFCollectionElement(value = "tasks", name = "taskCount")
+    private int taskCount;
+    
+    @QFCollectionElement(value = "members", name = "memberCount")
+    private int memberCount;
+}
+```
+
+**Usage:**
+```
+GET /api/projects?name=like:%api%&taskCount=gt:5&memberCount=gte:3
+// Find projects with 'api' in name, >5 tasks, and >=3 members
+```
+
+## Collection Operations
+
+### EQUAL (eq)
+Collection size equals the specified value.
+
+```
+GET /api/users?posts=eq:0
+// Users with exactly 0 posts
+```
+
+### NOT_EQUAL (ne)
+Collection size does not equal the specified value.
+
+```
+GET /api/teams?members=ne:0
+// Teams with at least 1 member
+```
+
+### GREATER_THAN (gt)
+Collection size greater than the specified value.
+
+```
+GET /api/authors?books=gt:10
+// Authors with more than 10 books
+```
+
+### GREATER_EQUAL_THAN (gte)
+Collection size greater than or equal to the specified value.
+
+```
+GET /api/companies?employees=gte:50
+// Companies with 50 or more employees
+```
+
+### LESS_THAN (lt)
+Collection size less than the specified value.
+
+```
+GET /api/projects?tasks=lt:5
+// Projects with fewer than 5 tasks
+```
+
+### LESS_EQUAL_THAN (lte)
+Collection size less than or equal to the specified value.
+
+```
+GET /api/groups?members=lte:10
+// Groups with 10 or fewer members
+```
+
+## Performance Considerations
+
+1. **Indexing**: Consider adding indexes on foreign key columns
+2. **Join Strategy**: Use `LEFT JOIN` when appropriate to include entities with empty collections
+3. **Subqueries**: For complex scenarios, the library may generate subqueries
+4. **Count Queries**: Collection filtering typically involves COUNT operations
+
+## Common Use Cases
+
+- Find users with no orders
+- Find products with many reviews
+- Find departments with minimum staff requirements
+- Find inactive accounts (no recent activity)
+- Find popular content (high engagement metrics)
+
+## Related Annotations
+
+- [`@QFElement`](/api/annotations/qf-element) - Standard field filtering
+- [`@QFJsonElement`](/api/annotations/qf-json-element) - JSON field filtering
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define the entity filter

@@ -1,0 +1,456 @@
+---
+title: Query Syntax
+description: Learn the query syntax formats supported by QueryFilterJPA
+icon: code
+---
+
+QueryFilterJPA supports two query syntax formats that can be used in URL query parameters. You configure which syntax to use via the `@QFParam` or `@QFMultiParam` annotation.
+
+## RHS Colon Syntax
+
+The **Right-Hand Side (RHS) Colon** syntax is the default format where the operation appears after the field name, separated by a colon.
+
+### Format
+
+```
+field=operation:value
+```
+
+### Examples
+
+<CodeGroup>
+```bash Basic Filtering
+# Equal operation (eq)
+GET /api/posts?title=eq:Hello
+
+# Greater than operation (gt)
+GET /api/posts?likes=gt:100
+
+# Like operation for partial matching
+GET /api/posts?title=like:Spring%
+```
+
+```bash Multiple Filters
+# Combine multiple conditions (AND logic)
+GET /api/posts?title=like:Spring&likes=gt:50&published=eq:true
+```
+
+```bash IN Operation
+# Check if value is in a list (comma-separated)
+GET /api/posts?postType=in:BLOG,NEWS,TUTORIAL
+```
+
+```bash Date Filtering
+# Greater than or equal with dates
+GET /api/posts?createDate=gte:2024-01-01T00:00:00Z
+
+# Between dates
+GET /api/posts?createDate=btw:2024-01-01T00:00:00Z,2024-12-31T23:59:59Z
+```
+</CodeGroup>
+
+### Default Operation
+
+If you omit the operation part, `eq` (equal) is assumed:
+
+```bash
+# These are equivalent
+GET /api/posts?published=eq:true
+GET /api/posts?published=true
+```
+
+### Configuration
+
+```java
+@GetMapping("/posts")
+public Page<Post> findAll(
+    @QFParam(value = PostFilterDef.class, type = QFParamType.RHS_COLON) 
+    QueryFilter<PostBlog> filter
+) {
+    return service.findAll(filter);
+}
+```
+
+## LHS Brackets Syntax
+
+The **Left-Hand Side (LHS) Brackets** syntax places the operation in brackets before the equals sign.
+
+### Format
+
+```
+field[operation]=value
+```
+
+### Examples
+
+<CodeGroup>
+```bash Basic Filtering
+# Equal operation
+GET /api/posts?title[eq]=Hello
+
+# Greater than operation
+GET /api/posts?likes[gt]=100
+
+# Like operation
+GET /api/posts?title[like]=Spring%
+```
+
+```bash Multiple Filters
+# Combine multiple conditions
+GET /api/posts?title[like]=Spring&likes[gt]=50&published[eq]=true
+```
+
+```bash IN Operation
+# Check if value is in a list
+GET /api/posts?postType[in]=BLOG,NEWS,TUTORIAL
+```
+
+```bash Date Filtering
+# Greater than or equal with dates
+GET /api/posts?createDate[gte]=2024-01-01T00:00:00Z
+
+# Between dates
+GET /api/posts?createDate[btw]=2024-01-01T00:00:00Z,2024-12-31T23:59:59Z
+```
+</CodeGroup>
+
+### Default Operation
+
+Similar to RHS syntax, omitting the operation assumes `eq`:
+
+```bash
+# These are equivalent
+GET /api/posts?published[eq]=true
+GET /api/posts?published=true
+```
+
+### Configuration
+
+```java
+@GetMapping("/posts")
+public Page<Post> findAll(
+    @QFParam(value = PostFilterDef.class, type = QFParamType.LHS_BRACKETS) 
+    QueryFilter<PostBlog> filter
+) {
+    return service.findAll(filter);
+}
+```
+
+## @QFParam vs @QFMultiParam
+
+QueryFilterJPA provides two parameter annotations with different behaviors:
+
+### @QFParam
+
+Accepts a single filter string parameter. Best for simple query parameters.
+
+```java
+@GetMapping("/posts")
+public Page<Post> findAll(
+    @QFParam(value = PostFilterDef.class, type = QFParamType.RHS_COLON) 
+    QueryFilter<PostBlog> filter
+) {
+    return service.findAll(filter);
+}
+```
+
+**Usage:**
+```bash
+GET /api/posts?filter=title=like:Spring&likes=gt:50
+```
+
+<Info>
+  With `@QFParam`, all filter conditions must be in a single query parameter (typically named "filter").
+</Info>
+
+### @QFMultiParam
+
+Accepts multiple individual query parameters. More intuitive for REST APIs.
+
+```java
+@GetMapping("/posts")
+public Page<Post> findAll(
+    @QFMultiParam(
+        value = PostFilterDef.class, 
+        type = QFParamType.RHS_COLON,
+        ignoreUnknown = true
+    ) 
+    QueryFilter<PostBlog> filter
+) {
+    return service.findAll(filter);
+}
+```
+
+**Usage:**
+```bash
+GET /api/posts?title=like:Spring&likes=gt:50&published=eq:true
+```
+
+#### Properties
+
+<ParamField path="ignoreUnknown" type="boolean" default="true">
+  When `true`, unknown parameters (not defined in the filter class) are silently ignored. When `false`, unknown parameters throw an exception.
+</ParamField>
+
+<Tip>
+  Use `@QFMultiParam` for public APIs as it provides a more conventional REST API experience. Use `@QFParam` when you need all filters in a single parameter.
+</Tip>
+
+## Combining Multiple Filters
+
+Multiple filter conditions are combined using **AND** logic by default.
+
+### RHS Colon
+
+```bash
+GET /api/posts?title=like:Spring&likes=gt:50&published=eq:true&createDate=gte:2024-01-01T00:00:00Z
+```
+
+This translates to SQL:
+```sql
+WHERE title LIKE '%Spring%' 
+  AND likes > 50 
+  AND published = true 
+  AND createDate >= '2024-01-01 00:00:00'
+```
+
+### LHS Brackets
+
+```bash
+GET /api/posts?title[like]=Spring&likes[gt]=50&published[eq]=true&createDate[gte]=2024-01-01T00:00:00Z
+```
+
+<Note>
+  Currently, QueryFilterJPA uses AND logic for multiple conditions. OR logic can be achieved using predicates or custom query logic.
+</Note>
+
+## Sorting Syntax
+
+Both syntax formats use the same sorting mechanism with the `sort` parameter.
+
+### Basic Sorting
+
+```bash
+# Sort by single field (ascending by default)
+GET /api/posts?sort=title
+
+# Sort descending using minus prefix
+GET /api/posts?sort=-createDate
+
+# Sort ascending using plus prefix
+GET /api/posts?sort=+likes
+```
+
+### Multiple Sort Fields
+
+Specify multiple fields separated by commas:
+
+```bash
+# Sort by createDate descending, then title ascending
+GET /api/posts?sort=-createDate,title
+
+# Multiple sort orders
+GET /api/posts?sort=-createDate,+title,-likes
+```
+
+### Combining Filters and Sorting
+
+<CodeGroup>
+```bash RHS Colon
+GET /api/posts?published=eq:true&likes=gt:100&sort=-createDate,title
+```
+
+```bash LHS Brackets
+GET /api/posts?published[eq]=true&likes[gt]=100&sort=-createDate,title
+```
+</CodeGroup>
+
+<Warning>
+  Only fields marked as `sortable = true` in the filter definition can be used for sorting. Attempting to sort by non-sortable fields will result in an error.
+</Warning>
+
+## URL Encoding Considerations
+
+When building queries programmatically or including special characters, proper URL encoding is essential.
+
+### Characters Requiring Encoding
+
+<AccordionGroup>
+  <Accordion title="Spaces" icon="space-awesome">
+    Spaces must be encoded as `%20` or `+`:
+    
+    ```bash
+    # Incorrect
+    GET /api/posts?title=eq:Hello World
+    
+    # Correct
+    GET /api/posts?title=eq:Hello%20World
+    GET /api/posts?title=eq:Hello+World
+    ```
+  </Accordion>
+
+  <Accordion title="Special Characters" icon="sparkles">
+    Characters like `&`, `=`, `?`, `#`, `/` have special meaning in URLs:
+    
+    ```bash
+    # Searching for "Rock & Roll"
+    GET /api/posts?title=like:Rock%20%26%20Roll
+    
+    # Searching for "50%"
+    GET /api/posts?title=like:50%25
+    ```
+    
+    Common encodings:
+    - `&` → `%26`
+    - `%` → `%25`
+    - `+` → `%2B`
+    - `=` → `%3D`
+    - `/` → `%2F`
+  </Accordion>
+
+  <Accordion title="Comma-Separated Values" icon="list">
+    In `IN` operations, commas separate values and typically don't need encoding:
+    
+    ```bash
+    GET /api/posts?postType=in:BLOG,NEWS,TUTORIAL
+    ```
+    
+    But if a value contains a comma, it must be encoded:
+    
+    ```bash
+    GET /api/posts?tags=in:spring-boot,java%2C-kotlin,microservices
+    ```
+  </Accordion>
+
+  <Accordion title="Dates and Times" icon="calendar">
+    ISO 8601 date strings often contain colons which are safe in values:
+    
+    ```bash
+    # No encoding needed for date values
+    GET /api/posts?createDate=gte:2024-01-01T00:00:00Z
+    
+    # Multiple dates in BETWEEN operation
+    GET /api/posts?createDate=btw:2024-01-01T00:00:00Z,2024-12-31T23:59:59Z
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Base64 Encoding
+
+For complex filter values, QueryFilterJPA supports base64 encoding:
+
+```java
+@GetMapping("/posts")
+public Page<Post> findAll(
+    @QFParam(
+        value = PostFilterDef.class,
+        type = QFParamType.RHS_COLON,
+        base64Encoded = true
+    ) 
+    QueryFilter<PostBlog> filter
+) {
+    return service.findAll(filter);
+}
+```
+
+With base64 encoding enabled, encode the entire filter string:
+
+```bash
+# Original: title=like:Spring&likes=gt:50
+# Base64: dGl0bGU9bGlrZTpTcHJpbmcmbGlrZXM9Z3Q6NTA=
+GET /api/posts?filter=dGl0bGU9bGlrZTpTcHJpbmcmbGlrZXM9Z3Q6NTA=
+```
+
+## Syntax Comparison
+
+| Feature | RHS Colon | LHS Brackets |
+|---------|-----------|-------------|
+| Format | `field=op:value` | `field[op]=value` |
+| Readability | More compact | More explicit |
+| Default Operation | `field=value` → `field=eq:value` | `field=value` → `field[eq]=value` |
+| Sorting | `sort=-field` | `sort=-field` |
+| Special Characters | Colon in operation | Brackets in operation |
+| URL Encoding | Fewer special chars | More intuitive for some |
+
+<Tip>
+  Choose RHS Colon for more compact URLs, or LHS Brackets if you prefer the explicit bracket notation common in frameworks like Laravel.
+</Tip>
+
+## Examples by Use Case
+
+<AccordionGroup>
+  <Accordion title="Search and Filter" icon="magnifying-glass">
+    ```bash RHS Colon
+    GET /api/posts?title=like:Spring%20Boot&published=eq:true
+    ```
+    
+    ```bash LHS Brackets
+    GET /api/posts?title[like]=Spring%20Boot&published[eq]=true
+    ```
+  </Accordion>
+
+  <Accordion title="Numeric Ranges" icon="chart-line">
+    ```bash RHS Colon
+    GET /api/posts?likes=gte:50&likes=lte:200
+    ```
+    
+    ```bash LHS Brackets
+    GET /api/posts?likes[gte]=50&likes[lte]=200
+    ```
+    
+    Or use BETWEEN:
+    
+    ```bash RHS Colon
+    GET /api/posts?likes=btw:50,200
+    ```
+    
+    ```bash LHS Brackets
+    GET /api/posts?likes[btw]=50,200
+    ```
+  </Accordion>
+
+  <Accordion title="Date Ranges" icon="calendar-range">
+    ```bash RHS Colon
+    GET /api/posts?createDate=btw:2024-01-01T00:00:00Z,2024-12-31T23:59:59Z
+    ```
+    
+    ```bash LHS Brackets
+    GET /api/posts?createDate[btw]=2024-01-01T00:00:00Z,2024-12-31T23:59:59Z
+    ```
+  </Accordion>
+
+  <Accordion title="Multiple Values (IN)" icon="list-check">
+    ```bash RHS Colon
+    GET /api/posts?postType=in:BLOG,NEWS,TUTORIAL&published=eq:true
+    ```
+    
+    ```bash LHS Brackets
+    GET /api/posts?postType[in]=BLOG,NEWS,TUTORIAL&published[eq]=true
+    ```
+  </Accordion>
+
+  <Accordion title="Null Checks" icon="circle-xmark">
+    ```bash RHS Colon
+    # Find posts without category
+    GET /api/posts?category=null:true
+    
+    # Find posts with category
+    GET /api/posts?category=null:false
+    ```
+    
+    ```bash LHS Brackets
+    GET /api/posts?category[null]=true
+    GET /api/posts?category[null]=false
+    ```
+  </Accordion>
+
+  <Accordion title="Complex Queries with Sorting" icon="arrow-down-wide-short">
+    ```bash RHS Colon
+    GET /api/posts?published=eq:true&likes=gt:100&createDate=gte:2024-01-01T00:00:00Z&sort=-createDate,title
+    ```
+    
+    ```bash LHS Brackets
+    GET /api/posts?published[eq]=true&likes[gt]=100&createDate[gte]=2024-01-01T00:00:00Z&sort=-createDate,title
+    ```
+  </Accordion>
+</AccordionGroup>

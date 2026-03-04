@@ -1,0 +1,275 @@
+---
+title: Swagger UI Integration
+description: Test and explore QueryFilterJPA filters directly from Swagger UI
+---
+
+Once you've added the OpenAPI integration dependency, your filter endpoints will automatically appear in Swagger UI with interactive documentation and testing capabilities.
+
+## How Filters Appear in Swagger UI
+
+The appearance differs based on whether you're using `@QFParam` or `@QFMultiParam`.
+
+### Single Parameter Mode (`@QFParam`)
+
+When using `@QFParam`, filters appear as a single query parameter with comprehensive documentation.
+
+
+The `filter` parameter includes:
+- **Filter syntax type**: RHS Colon or LHS Brackets
+- **Available fields**: All filterable fields from your filter definition
+- **Operations**: Supported operations for each field (eq, like, gte, etc.)
+- **Field types**: Data types, enum values, and special field markers
+- **Sortable fields**: Which fields can be used for sorting
+
+**Example documentation output:**
+
+```
+Filter is RHS_COLON. Available fields:
+
+* title
+  Operations: [eq,ne,like,starts,ends,in]
+
+* likes (Sortable)
+  Operations: [eq,ne,gt,gte,lt,lte,in]
+
+* createDate (Sortable)
+  Operations: [eq,ne,gt,gte,lt,lte,in]
+
+* postType
+  Operations: [eq,ne,in]
+  Enum values: [TECH,LIFESTYLE,NEWS]
+```
+
+### Multi Parameter Mode (`@QFMultiParam`)
+
+When using `@QFMultiParam`, each filter field appears as a separate query parameter.
+
+
+Each parameter shows:
+- **Field name**: The name of the filter field
+- **Operations**: Available operations for that specific field
+- **Type information**: Enum values, collection types, etc.
+- **Array support**: Multiple values can be provided for array operations
+
+Additionally, a `sort` parameter is automatically added listing all sortable fields.
+
+## Testing Filters Through Swagger
+
+Swagger UI provides an interactive interface for testing your filters.
+
+### Testing with `@QFParam`
+
+1. **Navigate to your endpoint** in Swagger UI
+2. **Click "Try it out"** to enable the input field
+3. **Enter your filter string** using the documented syntax
+4. **Click "Execute"** to send the request
+
+**Example filter inputs:**
+
+<CodeGroup>
+
+```text RHS Colon Syntax
+filter=title=like:Spring&likes=gte:10&sort=-createDate
+```
+
+```text LHS Brackets Syntax
+filter=title[like]=Spring&likes[gte]=10&sort=-createDate
+```
+
+</CodeGroup>
+
+<Tip>
+  For base64-encoded filters, use the browser console or a separate tool to encode your filter string before pasting it into Swagger UI.
+</Tip>
+
+### Testing with `@QFMultiParam`
+
+1. **Navigate to your endpoint** in Swagger UI
+2. **Click "Try it out"** to enable all parameter fields
+3. **Enter values for desired filters** in their respective fields
+4. **Add multiple values** by clicking the "Add item" button for array parameters
+5. **Add sort fields** if needed
+6. **Click "Execute"** to send the request
+
+**Example parameter values:**
+
+| Parameter | Value |
+|-----------|-------|
+| title | `like:Spring` (RHS) or `[like]Spring` (LHS) |
+| likes | `gte:10` (RHS) or `[gte]10` (LHS) |
+| sort | `-createDate` |
+
+<Note>
+  Remember that `@QFMultiParam` uses a different LHS syntax: `field=[op]value` instead of `field[op]=value`.
+</Note>
+
+## Understanding the Documentation
+
+Swagger UI shows detailed metadata for each filter field.
+
+### Field Markers
+
+- **(Sortable)**: Field can be used in the `sort` parameter
+- **(JSON element)**: PostgreSQL JSON field with special operations
+- **(Collection)**: Array/collection field supporting array operations
+- **Enum values**: Shows all possible values for enum fields
+- **Possible Values**: Shows discriminator values for discriminator fields
+
+### Operation Codes
+
+Common operations you'll see documented:
+
+| Operation | Description | Example |
+|-----------|-------------|----------|
+| `eq` | Equals | `title=eq:Spring` |
+| `ne` | Not equals | `title=ne:Winter` |
+| `like` | Contains (case-insensitive) | `title=like:boot` |
+| `starts` | Starts with | `title=starts:Spring` |
+| `ends` | Ends with | `title=ends:JPA` |
+| `gt` | Greater than | `likes=gt:100` |
+| `gte` | Greater than or equal | `likes=gte:50` |
+| `lt` | Less than | `likes=lt:10` |
+| `lte` | Less than or equal | `likes=lte:5` |
+| `in` | In list | `postType=in:TECH,NEWS` |
+
+### Special Field Types
+
+**Date Fields:**
+```
+* createDate (Sortable)
+  Operations: [eq,ne,gt,gte,lt,lte,in]
+```
+Date fields accept ISO 8601 format: `createDate=gte:2024-01-01T00:00:00`
+
+**Enum Fields:**
+```
+* postType
+  Operations: [eq,ne,in]
+  Enum values: [TECH,LIFESTYLE,NEWS]
+```
+Enum values are validated and must match one of the listed options.
+
+**Collection Fields:**
+```
+* tags (Collection)
+  Operations: [contains,empty,size]
+```
+Supports specialized array operations.
+
+## Customization Options
+
+While the OpenAPI integration works automatically, you can customize the documentation through your filter definition and annotations.
+
+### Hiding Fields
+
+Use `@QFBlockParsing` to exclude sensitive or internal fields:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    @QFElement("published")
+    @QFBlockParsing  // Hidden from Swagger UI
+    private boolean published;
+    
+    @QFElement("title")  // Visible in Swagger UI
+    private String title;
+}
+```
+
+### Controlling Operation Visibility
+
+Specify which operations are available for each field:
+
+```java
+@QFElement(
+    value = "title",
+    allowedOperations = {QFOperationEnum.EQUAL, QFOperationEnum.LIKE}
+)
+private String title;
+```
+
+Only the specified operations will appear in Swagger UI.
+
+### Making Fields Sortable
+
+Mark fields as sortable to include them in the sort parameter:
+
+```java
+@QFElement("createDate")
+@QFSortable("createDate")
+private LocalDateTime createDate;
+```
+
+Or use a dedicated sortable field:
+
+```java
+@QFSortable("lastModified")
+private Timestamp lastModified;
+```
+
+## Troubleshooting
+
+### Filters Not Appearing
+
+**Issue**: Filter parameters don't show up in Swagger UI
+
+**Solutions**:
+- Verify the OpenAPI dependency is added for your Spring Boot version
+- Check that `@QFParam` or `@QFMultiParam` is present on the controller method
+- Ensure the filter definition class is scanned by `@EnableQueryFilter`
+- Verify SpringDoc OpenAPI is configured correctly
+
+### Incorrect Documentation
+
+**Issue**: Documentation shows wrong operations or field types
+
+**Solutions**:
+- Check your filter definition annotations
+- Verify operation restrictions with `allowedOperations`
+- Ensure field types in the filter definition match entity field types
+- Clear browser cache and reload Swagger UI
+
+### Missing Field Descriptions
+
+**Issue**: Some fields are missing from the documentation
+
+**Solutions**:
+- Check if fields have `@QFBlockParsing` annotation
+- Verify the field is properly annotated with `@QFElement`
+- Ensure the field is public or has proper access modifiers
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use descriptive filter class names">
+    Name your filter definitions clearly (e.g., `PostFilterDef`, `UserSearchFilter`) to make the API documentation easier to understand.
+  </Accordion>
+
+  <Accordion title="Document enum values">
+    Always use Java enums for fields with restricted values. They'll automatically appear in Swagger UI with all possible options.
+  </Accordion>
+
+  <Accordion title="Limit exposed operations">
+    Only expose operations that make sense for each field. For example, `like` operations on numeric fields may not be useful.
+  </Accordion>
+
+  <Accordion title="Test in Swagger UI during development">
+    Use Swagger UI as your primary testing tool during development. It provides immediate feedback on filter behavior.
+  </Accordion>
+
+  <Accordion title="Consider @QFMultiParam for complex filters">
+    If your filters are complex with many fields, `@QFMultiParam` provides a better experience in Swagger UI with individual parameter controls.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Filter Syntax" icon="code" href="/concepts/query-syntax">
+    Learn the complete filter syntax for RHS Colon and LHS Brackets
+  </Card>
+  <Card title="Advanced Features" icon="wand-magic-sparkle" href="/concepts/operations">
+    Explore custom operations and advanced filtering capabilities
+  </Card>
+</CardGroup>

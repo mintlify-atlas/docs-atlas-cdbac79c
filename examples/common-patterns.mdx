@@ -1,0 +1,658 @@
+---
+title: Common Patterns
+description: Real-world filtering scenarios, best practices, performance tips, and security considerations
+---
+
+This guide covers common filtering patterns, best practices, and important considerations when using QueryFilterJPA in production applications.
+
+## Common Filtering Patterns
+
+### Text Search Patterns
+
+#### Contains Search
+
+Find posts with titles containing a specific word:
+
+```bash
+# Case-insensitive contains
+GET /posts?filter=title~*spring*
+
+# Case-sensitive contains
+GET /posts?filter=title~spring
+
+# Starts with
+GET /posts?filter=title~spring*
+
+# Ends with
+GET /posts?filter=title~*boot
+```
+
+#### Exact Match
+
+```bash
+# Exact string match
+GET /posts?filter=title:"Spring Boot Tutorial"
+
+# Exact enum match
+GET /posts?filter=postType:EDUCATIONAL
+```
+
+### Numeric Filtering
+
+#### Range Queries
+
+```bash
+# Greater than
+GET /posts?filter=likes>100
+
+# Less than or equal
+GET /posts?filter=likes<=50
+
+# Between two values (AND)
+GET /posts?filter=likes>10%26likes<100
+
+# Multiple numeric conditions
+GET /posts?filter=likes>=50%26likes<=200
+```
+
+#### Exact Values
+
+```bash
+# Exact number
+GET /posts?filter=likes:42
+
+# Multiple exact values (OR)
+GET /posts?filter=likes:10|likes:20|likes:30
+```
+
+### Date and Time Filtering
+
+#### Date Ranges
+
+```bash
+# After a specific date
+GET /posts?filter=createDate>2024-01-01
+
+# Before a specific date
+GET /posts?filter=createDate<2024-12-31
+
+# Between dates
+GET /posts?filter=createDate>2024-01-01%26createDate<2024-12-31
+
+# Specific date
+GET /posts?filter=createDate:2024-06-15
+```
+
+#### Date-Time with Time Zones
+
+```bash
+# ISO 8601 format
+GET /posts?filter=createDate>2024-06-01T10:00:00Z
+
+# With timezone offset
+GET /posts?filter=createDate>2024-06-01T10:00:00-05:00
+```
+
+### Boolean Filtering
+
+```bash
+# Published posts only
+GET /posts?filter=published:true
+
+# Unpublished posts
+GET /posts?filter=published:false
+```
+
+### Enum Filtering
+
+```bash
+# Single enum value
+GET /posts?filter=postType:EDUCATIONAL
+
+# Multiple enum values (OR)
+GET /posts?filter=postType:EDUCATIONAL|postType:INFO
+
+# Exclude enum value (with other conditions)
+GET /posts?filter=published:true%26postType:EDUCATIONAL
+```
+
+### Relationship Filtering
+
+#### Filter by Related Entity
+
+```java
+// Filter definition with nested path
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    @QFElement("title")
+    private String title;
+    
+    // Filter by comment content
+    @QFElement("comments.comment")
+    private String commentText;
+    
+    // Filter by number of comments
+    @QFElement("comments")
+    private List<Comment> comments;
+}
+```
+
+```bash
+# Posts with specific comment text
+GET /posts?filter=comments.comment~*great*
+```
+
+### Combining Multiple Filters
+
+#### AND Conditions
+
+Use `%26` (URL-encoded `&`) to combine conditions with AND:
+
+```bash
+# Published posts with more than 50 likes
+GET /posts?filter=published:true%26likes>50
+
+# Date range with type filter
+GET /posts?filter=createDate>2024-01-01%26createDate<2024-12-31%26postType:EDUCATIONAL
+```
+
+#### OR Conditions
+
+Use `|` (pipe) for OR conditions:
+
+```bash
+# Educational or informational posts
+GET /posts?filter=postType:EDUCATIONAL|postType:INFO
+
+# Posts with specific like counts
+GET /posts?filter=likes:10|likes:20|likes:50
+```
+
+#### Complex Combinations
+
+```bash
+# (Published AND likes > 50) OR (type = EDUCATIONAL)
+GET /posts?filter=(published:true%26likes>50)|postType:EDUCATIONAL
+```
+
+### Sorting Patterns
+
+#### Single Field Sorting
+
+```bash
+# Sort by likes descending
+GET /posts?filter=+sort(likes,desc)
+
+# Sort by creation date ascending
+GET /posts?filter=+sort(createDate,asc)
+```
+
+#### Multi-Field Sorting
+
+```bash
+# Sort by published status, then by likes
+GET /posts?filter=+sort(published,desc)+sort(likes,desc)
+
+# Combined with filters
+GET /posts?filter=postType:EDUCATIONAL%26+sort(createDate,desc)
+```
+
+### Pagination Patterns
+
+```bash
+# First page (10 items)
+GET /posts?filter=published:true&page=0&size=10
+
+# Second page
+GET /posts?filter=published:true&page=1&size=10
+
+# Custom page size
+GET /posts?filter=published:true&page=0&size=25
+
+# With sorting and filtering
+GET /posts?filter=published:true%26+sort(likes,desc)&page=0&size=20
+```
+
+## Best Practices
+
+### 1. Define Clear Filter Boundaries
+
+Only expose fields that should be filterable:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    // Good: Allow filtering by public fields
+    @QFElement("title")
+    private String title;
+    
+    @QFElement("published")
+    private boolean published;
+    
+    // Don't expose sensitive fields
+    // @QFElement("internalNotes") ❌
+    // private String internalNotes;
+}
+```
+
+### 2. Use Block Parsing for Security
+
+Prevent complex filter expressions on sensitive fields:
+
+```java
+@QFDefinitionClass(User.class)
+public class UserFilterDef {
+    
+    @QFElement("email")
+    @QFBlockParsing // Prevents complex expressions
+    private String email;
+    
+    @QFElement("isActive")
+    @QFBlockParsing // Only allow simple true/false
+    private boolean isActive;
+}
+```
+
+### 3. Implement Default Filters
+
+Apply default filters in your service layer:
+
+```java
+@Service
+public class PostBlogService {
+    
+    public Page<PostDTO> getPublicPosts(QueryFilter<PostBlog> filter, Pageable pageable) {
+        // Always filter to only show published posts for public API
+        Specification<PostBlog> spec = filter.getSpecification()
+            .and((root, query, cb) -> cb.isTrue(root.get("published")));
+        
+        return repository.findAll(spec, pageable).map(this::toDTO);
+    }
+}
+```
+
+### 4. Validate Input Ranges
+
+Add validation to prevent abuse:
+
+```java
+@GetMapping("/posts")
+public Page<PostDTO> getPosts(
+    @QFParam(PostFilterDef.class) QueryFilter<PostBlog> filter,
+    @RequestParam(defaultValue = "0") @Min(0) int page,
+    @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size) {
+    return service.getPosts(filter, page, size);
+}
+```
+
+### 5. Use DTOs for Response
+
+Never expose entities directly:
+
+```java
+public Page<PostDTO> getPosts(QueryFilter<PostBlog> filter, int page, int size) {
+    Page<PostBlog> entities = repository.findAll(filter, PageRequest.of(page, size));
+    // Always map to DTO
+    return entities.map(this::toDTO);
+}
+```
+
+### 6. Index Frequently Filtered Fields
+
+Add database indexes for better performance:
+
+```java
+@Entity
+@Table(name = "post_blog", indexes = {
+    @Index(name = "idx_published", columnList = "published"),
+    @Index(name = "idx_post_type", columnList = "post_type"),
+    @Index(name = "idx_create_date", columnList = "create_date"),
+    @Index(name = "idx_likes", columnList = "likes")
+})
+public class PostBlog extends BaseEntity {
+    // ...
+}
+```
+
+### 7. Document Your API
+
+Provide clear examples in your OpenAPI documentation:
+
+```java
+@Operation(
+    summary = "Get filtered posts",
+    description = "Returns a paginated list of posts with optional filtering. " +
+                  "Examples:\n" +
+                  "- Published posts: ?filter=published:true\n" +
+                  "- Popular posts: ?filter=likes>100\n" +
+                  "- Recent educational posts: ?filter=postType:EDUCATIONAL&filter=createDate>2024-01-01"
+)
+@GetMapping("/posts")
+public Page<PostDTO> getPosts(
+    @QFParam(PostFilterDef.class) QueryFilter<PostBlog> filter) {
+    return service.getPosts(filter);
+}
+```
+
+## Performance Tips
+
+### 1. Optimize Join Fetching
+
+Control eager/lazy loading:
+
+```java
+@Entity
+public class PostBlog extends BaseEntity {
+    
+    // Use lazy loading for collections
+    @OneToMany(mappedBy = "post", fetch = FetchType.LAZY)
+    private List<Comment> comments;
+    
+    // Only use EAGER when always needed
+    @ManyToOne(fetch = FetchType.EAGER)
+    private User author;
+}
+```
+
+### 2. Use Projection for Large Results
+
+Limit data transfer with projections:
+
+```java
+public interface PostSummary {
+    String getTsid();
+    String getTitle();
+    int getLikes();
+}
+
+public interface PostBlogRepository extends JpaSpecificationExecutor<PostBlog> {
+    Page<PostSummary> findAll(Specification<PostBlog> spec, Pageable pageable);
+}
+```
+
+### 3. Implement Caching
+
+Cache frequently accessed filter results:
+
+```java
+@Service
+public class PostBlogService {
+    
+    @Cacheable(value = "posts", key = "#filter.toString() + '-' + #page + '-' + #size")
+    public Page<PostDTO> getPosts(QueryFilter<PostBlog> filter, int page, int size) {
+        return repository.findAll(filter, PageRequest.of(page, size))
+            .map(this::toDTO);
+    }
+}
+```
+
+### 4. Monitor Query Performance
+
+Enable query logging in development:
+
+```yaml
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    io.github.acoboh: DEBUG
+
+spring:
+  jpa:
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+```
+
+### 5. Set Reasonable Default Page Sizes
+
+```java
+private static final int DEFAULT_PAGE_SIZE = 20;
+private static final int MAX_PAGE_SIZE = 100;
+
+@GetMapping("/posts")
+public Page<PostDTO> getPosts(
+    @QFParam(PostFilterDef.class) QueryFilter<PostBlog> filter,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "20") int size) {
+    
+    // Enforce maximum page size
+    int validatedSize = Math.min(size, MAX_PAGE_SIZE);
+    return service.getPosts(filter, page, validatedSize);
+}
+```
+
+## Security Considerations
+
+### 1. Prevent SQL Injection
+
+QueryFilterJPA uses JPA Criteria API, which is immune to SQL injection. However, always validate input:
+
+```java
+// QueryFilterJPA automatically handles this safely
+GET /posts?filter=title~*'; DROP TABLE posts; --*
+// This will search for the literal string, not execute SQL
+```
+
+### 2. Implement Authorization Checks
+
+Filter results based on user permissions:
+
+```java
+@Service
+public class PostBlogService {
+    
+    public Page<PostDTO> getPosts(
+        QueryFilter<PostBlog> filter, 
+        Authentication auth,
+        Pageable pageable) {
+        
+        Specification<PostBlog> spec = filter.getSpecification();
+        
+        // Add authorization logic
+        if (!hasRole(auth, "ADMIN")) {
+            // Non-admins only see published posts
+            spec = spec.and((root, query, cb) -> 
+                cb.isTrue(root.get("published")));
+        }
+        
+        return repository.findAll(spec, pageable).map(this::toDTO);
+    }
+}
+```
+
+### 3. Rate Limiting
+
+Implement rate limiting to prevent abuse:
+
+```java
+@RestController
+@RateLimiter(name = "posts-api")
+public class PostRestController {
+    
+    @GetMapping("/posts")
+    public Page<PostDTO> getPosts(@QFParam(PostFilterDef.class) QueryFilter<PostBlog> filter) {
+        return service.getPosts(filter);
+    }
+}
+```
+
+### 4. Sanitize Error Messages
+
+Don't expose internal details in error responses:
+
+```java
+@RestControllerAdvice
+public class FilterExceptionHandler {
+    
+    @ExceptionHandler(QueryFilterException.class)
+    public ResponseEntity<ErrorResponse> handleFilterException(QueryFilterException ex) {
+        // Log detailed error internally
+        log.error("Filter error: {}", ex.getMessage(), ex);
+        
+        // Return sanitized error to client
+        return ResponseEntity.badRequest()
+            .body(new ErrorResponse("Invalid filter parameters"));
+    }
+}
+```
+
+### 5. Validate Filter Complexity
+
+Prevent overly complex filters that could impact performance:
+
+```java
+public class FilterComplexityValidator {
+    
+    private static final int MAX_CONDITIONS = 10;
+    
+    public static void validate(String filterString) {
+        long conditionCount = filterString.chars()
+            .filter(ch -> ch == '&' || ch == '|')
+            .count() + 1;
+        
+        if (conditionCount > MAX_CONDITIONS) {
+            throw new IllegalArgumentException(
+                "Filter too complex. Maximum " + MAX_CONDITIONS + " conditions allowed."
+            );
+        }
+    }
+}
+```
+
+### 6. Use HTTPS
+
+Always use HTTPS to prevent filter parameters from being intercepted:
+
+```yaml
+server:
+  ssl:
+    enabled: true
+    key-store: classpath:keystore.p12
+    key-store-password: ${SSL_KEYSTORE_PASSWORD}
+    key-store-type: PKCS12
+```
+
+## Testing Patterns
+
+### Unit Testing Filters
+
+```java
+@SpringBootTest
+class PostFilterDefTest {
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    @Autowired
+    private QueryFilterProcessor processor;
+    
+    @Test
+    void testPublishedFilter() {
+        // Given
+        String filterString = "published:true";
+        QueryFilter<PostBlog> filter = processor.parse(filterString, PostFilterDef.class);
+        
+        // When
+        List<PostBlog> results = repository.findAll(filter.getSpecification());
+        
+        // Then
+        assertThat(results).allMatch(PostBlog::isPublished);
+    }
+    
+    @Test
+    void testLikesRangeFilter() {
+        String filterString = "likes>50&likes<200";
+        QueryFilter<PostBlog> filter = processor.parse(filterString, PostFilterDef.class);
+        
+        List<PostBlog> results = repository.findAll(filter.getSpecification());
+        
+        assertThat(results)
+            .allMatch(post -> post.getLikes() > 50 && post.getLikes() < 200);
+    }
+}
+```
+
+### Integration Testing
+
+```java
+@SpringBootTest
+@AutoConfigureMockMvc
+class PostRestControllerTest {
+    
+    @Autowired
+    private MockMvc mockMvc;
+    
+    @Test
+    void testFilterByTitle() throws Exception {
+        mockMvc.perform(get("/posts/single-param")
+                .param("filter", "title~*Spring*"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[*].title").value(everyItem(containsString("Spring"))));
+    }
+    
+    @Test
+    void testInvalidFilter() throws Exception {
+        mockMvc.perform(get("/posts/single-param")
+                .param("filter", "invalidField:value"))
+            .andExpect(status().isBadRequest());
+    }
+}
+```
+
+## Common Pitfalls
+
+### 1. Forgetting URL Encoding
+
+```bash
+# Wrong - browser may not encode properly
+GET /posts?filter=title~Spring Boot
+
+# Correct - properly URL encoded
+GET /posts?filter=title~Spring%20Boot
+```
+
+### 2. Not Handling Null Values
+
+```java
+// Handle nullable fields properly
+@QFElement("optionalField")
+private String optionalField;
+
+// In service, check for null
+if (entity.getOptionalField() != null) {
+    // Process
+}
+```
+
+### 3. Overusing Eager Loading
+
+```java
+// Bad - loads everything eagerly
+@OneToMany(fetch = FetchType.EAGER)
+private List<Comment> comments;
+
+// Good - load on demand
+@OneToMany(fetch = FetchType.LAZY)
+private List<Comment> comments;
+```
+
+### 4. Exposing Internal IDs
+
+```java
+// Use UUIDs or TSIDs instead of sequential IDs
+@Id
+@Tsid // Time-sorted unique identifier
+private String tsid;
+```
+
+## Next Steps
+
+- Review [Filter Definition configuration](/concepts/filter-definitions)
+- Learn about [Query Operations](/concepts/operations)
+- Explore [OpenAPI Integration](/openapi/overview)
+- Check [Spring Boot 3 example](/examples/spring-boot-3)
+- See [Spring Boot 4 migration](/examples/spring-boot-4)

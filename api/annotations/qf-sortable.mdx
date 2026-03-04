@@ -1,0 +1,302 @@
+---
+title: "@QFSortable"
+description: "Define sortable-only fields in query filters"
+---
+
+## Overview
+
+`@QFSortable` is a field-level annotation used to define fields that can be used for sorting but not for filtering. It's useful when you want to allow sorting by certain properties without exposing them as filterable fields.
+
+## Annotation Signature
+
+```java
+@Retention(RUNTIME)
+@Target(FIELD)
+public @interface QFSortable
+```
+
+## Properties
+
+<ParamField path="value" type="String" required>
+  Path to the entity property for sorting.
+  
+  This is the full path from the entity root to the property you want to sort by. Use dot notation for nested properties.
+  
+  Example: `"createdAt"`, `"author.name"`, `"department.manager.lastName"`
+</ParamField>
+
+<ParamField path="autoFetch" type="boolean" default="true">
+  Enable automatic fetch loading when sorting by this field.
+  
+  When `true` and this field is used for sorting, related entities will be fetched to avoid N+1 query problems.
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{ JoinType.INNER }">
+  Specify join types for nested property paths.
+  
+  - Single value: applied to all joins
+  - Multiple values: first value for first join, last value for remaining joins
+  
+  Example: `{LEFT, INNER}` - first join is LEFT, rest are INNER
+</ParamField>
+
+## Usage Examples
+
+### Basic Sortable Field
+
+```java
+@QFDefinitionClass(Product.class)
+public class ProductFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFSortable("createdAt")
+    private String sortByCreatedAt;
+}
+```
+
+**Usage:**
+```
+GET /api/products?sort=sortByCreatedAt,desc
+// Sort by creation date, newest first
+
+GET /api/products?name=like:%laptop%&sort=sortByCreatedAt,asc
+// Filter by name and sort by creation date
+```
+
+### Nested Property Sorting
+
+```java
+@QFDefinitionClass(Order.class)
+public class OrderFilterDef {
+    
+    @QFElement("status")
+    private String status;
+    
+    @QFSortable("customer.name")
+    private String sortByCustomerName;
+}
+```
+
+**Usage:**
+```
+GET /api/orders?status=eq:PENDING&sort=sortByCustomerName,asc
+// Pending orders sorted by customer name
+```
+
+### Multiple Sortable Fields
+
+```java
+@QFDefinitionClass(Employee.class)
+public class EmployeeFilterDef {
+    
+    @QFElement("department")
+    private String department;
+    
+    @QFSortable("lastName")
+    private String sortByLastName;
+    
+    @QFSortable("firstName")
+    private String sortByFirstName;
+    
+    @QFSortable("hireDate")
+    private String sortByHireDate;
+    
+    @QFSortable("salary")
+    private String sortBySalary;
+}
+```
+
+**Usage:**
+```
+GET /api/employees?sort=sortByLastName,asc&sort=sortByFirstName,asc
+// Sort by last name, then first name
+
+GET /api/employees?department=eq:IT&sort=sortBySalary,desc
+// IT employees sorted by salary, highest first
+```
+
+### Disable Auto Fetch
+
+```java
+@QFSortable(value = "metadata.createdBy", autoFetch = false)
+private String sortByCreator;
+```
+
+Useful when you don't want automatic join fetching, perhaps for performance reasons or when you're handling fetching manually.
+
+### Custom Join Types
+
+```java
+@QFSortable(
+    value = "department.manager.lastName",
+    joinTypes = {JoinType.LEFT, JoinType.LEFT}
+)
+private String sortByManagerLastName;
+```
+
+Uses LEFT JOINs to include employees even if department or manager is null.
+
+### Combining Filterable and Sortable
+
+```java
+@QFDefinitionClass(Article.class)
+public class ArticleFilterDef {
+    
+    // Filterable and sortable
+    @QFElement("title")
+    private String title;
+    
+    // Filterable and sortable
+    @QFElement("publishedAt")
+    @QFDate(timeFormat = "yyyy-MM-dd")
+    private LocalDate publishedAt;
+    
+    // Filterable only (sortable = false)
+    @QFElement(value = "tags", sortable = false)
+    private String tags;
+    
+    // Sortable only
+    @QFSortable("viewCount")
+    private String sortByViews;
+    
+    // Sortable only
+    @QFSortable("author.reputation")
+    private String sortByAuthorReputation;
+}
+```
+
+**Usage:**
+```
+GET /api/articles?publishedAt=gte:2024-01-01&sort=sortByViews,desc
+// Articles from 2024, sorted by most viewed
+
+GET /api/articles?tags=contains:java&sort=sortByAuthorReputation,desc
+// Java articles sorted by author reputation
+```
+
+### Real-World Example: User Management
+
+```java
+@Entity
+public class User {
+    @Id
+    private Long id;
+    private String username;
+    private String email;
+    private LocalDateTime createdAt;
+    private LocalDateTime lastLoginAt;
+    private int loginCount;
+    
+    @ManyToOne
+    private Department department;
+}
+
+@QFDefinitionClass(User.class)
+public class UserFilterDef {
+    
+    // Filterable fields
+    @QFElement("username")
+    private String username;
+    
+    @QFElement("email")
+    private String email;
+    
+    @QFElement("department.name")
+    private String departmentName;
+    
+    // Sortable-only fields (sensitive metrics)
+    @QFSortable("loginCount")
+    private String sortByLoginCount;
+    
+    @QFSortable("lastLoginAt")
+    private String sortByLastLogin;
+    
+    @QFSortable("createdAt")
+    private String sortByCreatedAt;
+}
+```
+
+**Usage:**
+```
+GET /api/users?departmentName=eq:Engineering&sort=sortByLoginCount,desc
+// Engineering users sorted by login frequency
+
+GET /api/users?sort=sortByLastLogin,desc
+// All users sorted by most recent login
+```
+
+### Audit Trail Sorting
+
+```java
+@QFDefinitionClass(AuditLog.class)
+public class AuditLogFilterDef {
+    
+    @QFElement("entityType")
+    private String entityType;
+    
+    @QFElement("action")
+    private String action;
+    
+    @QFElement("userId")
+    private Long userId;
+    
+    @QFSortable("timestamp")
+    private String sortByTimestamp;
+    
+    @QFSortable("user.username")
+    private String sortByUsername;
+}
+```
+
+**Usage:**
+```
+GET /api/audit?action=eq:DELETE&sort=sortByTimestamp,desc
+// Recent delete actions
+```
+
+## Sorting Syntax
+
+When using sortable fields in queries:
+
+### Single Sort
+```
+sort=fieldName,direction
+```
+
+Examples:
+- `sort=sortByCreatedAt,asc` - Ascending
+- `sort=sortByPrice,desc` - Descending
+
+### Multiple Sort
+```
+sort=field1,direction1&sort=field2,direction2
+```
+
+Example:
+```
+sort=sortByLastName,asc&sort=sortByFirstName,asc
+```
+
+## When to Use @QFSortable
+
+Use `@QFSortable` when:
+
+1. **Sensitive data**: Allow sorting but not filtering on sensitive fields
+2. **Computed fields**: Fields calculated or aggregated that shouldn't be filtered
+3. **Performance**: Fields expensive to filter but cheap to sort
+4. **UI requirements**: Display order matters but filtering isn't needed
+5. **Metrics**: Count, sum, average fields used only for ordering
+
+## Performance Considerations
+
+1. **Auto Fetch**: Set `autoFetch = false` if you're managing fetching manually
+2. **Indexes**: Ensure database indexes exist on frequently sorted columns
+3. **Join Types**: Use `LEFT JOIN` when null values are expected
+4. **Nested Paths**: Deep nesting can impact performance; consider denormalization
+
+## Related Annotations
+
+- [`@QFElement`](/api/annotations/qf-element) - Define filterable (and optionally sortable) fields
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define the entity filter

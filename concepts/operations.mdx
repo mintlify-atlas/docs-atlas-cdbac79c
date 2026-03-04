@@ -1,0 +1,615 @@
+---
+title: Filter Operations
+description: Complete reference of all query filter operations supported by QueryFilterJPA
+icon: function
+---
+
+QueryFilterJPA provides a comprehensive set of operations for filtering data. Each operation is defined in the `QFOperationEnum` and has specific type compatibility and use cases.
+
+## Equality Operations
+
+Operations for exact matching and exclusion.
+
+### EQUAL (eq)
+
+Matches values that are exactly equal to the specified value.
+
+<ParamField path="Operation" type="String">eq</ParamField>
+<ParamField path="Type Compatibility" type="Types">All types</ParamField>
+<ParamField path="Array Support" type="Boolean">Yes (PostgreSQL arrays)</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+GET /api/posts?published=eq:true
+GET /api/posts?likes=eq:100
+GET /api/posts?title=eq:Hello
+```
+
+```bash LHS Brackets
+GET /api/posts?published[eq]=true
+GET /api/posts?likes[eq]=100
+GET /api/posts?title[eq]=Hello
+```
+
+```java Java
+@QFElement("title")
+private String title; // Supports eq operation
+
+@QFElement("likes")
+private int likes; // Supports eq operation
+```
+</CodeGroup>
+
+### NOT_EQUAL (ne)
+
+Matches values that are not equal to the specified value.
+
+<ParamField path="Operation" type="String">ne</ParamField>
+<ParamField path="Type Compatibility" type="Types">All types</ParamField>
+<ParamField path="Array Support" type="Boolean">Yes (PostgreSQL arrays)</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+GET /api/posts?status=ne:DRAFT
+GET /api/posts?likes=ne:0
+```
+
+```bash LHS Brackets
+GET /api/posts?status[ne]=DRAFT
+GET /api/posts?likes[ne]=0
+```
+</CodeGroup>
+
+## Comparison Operations
+
+Operations for numeric and date comparisons. These operations require `Comparable` types.
+
+### GREATER_THAN (gt)
+
+Matches values greater than the specified value.
+
+<ParamField path="Operation" type="String">gt</ParamField>
+<ParamField path="Type Compatibility" type="Types">Comparable types, primitives</ParamField>
+<ParamField path="Array Support" type="Boolean">Yes (PostgreSQL arrays)</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+GET /api/posts?likes=gt:100
+GET /api/posts?createDate=gt:2024-01-01T00:00:00Z
+```
+
+```bash LHS Brackets
+GET /api/posts?likes[gt]=100
+GET /api/posts?createDate[gt]=2024-01-01T00:00:00Z
+```
+
+```java Java
+@QFElement("likes")
+private int likes;
+
+@QFDate
+@QFElement("createDate")
+private LocalDateTime createDate;
+```
+</CodeGroup>
+
+### GREATER_EQUAL_THAN (gte)
+
+Matches values greater than or equal to the specified value.
+
+<ParamField path="Operation" type="String">gte</ParamField>
+<ParamField path="Type Compatibility" type="Types">Comparable types, primitives</ParamField>
+<ParamField path="Array Support" type="Boolean">Yes (PostgreSQL arrays)</ParamField>
+
+**Examples:**
+
+```bash
+GET /api/posts?likes=gte:50
+GET /api/posts?createDate=gte:2024-01-01T00:00:00Z
+```
+
+### LESS_THAN (lt)
+
+Matches values less than the specified value.
+
+<ParamField path="Operation" type="String">lt</ParamField>
+<ParamField path="Type Compatibility" type="Types">Comparable types, primitives</ParamField>
+<ParamField path="Array Support" type="Boolean">Yes (PostgreSQL arrays)</ParamField>
+
+**Examples:**
+
+```bash
+GET /api/posts?likes=lt:50
+GET /api/posts?createDate=lt:2024-12-31T23:59:59Z
+```
+
+### LESS_EQUAL_THAN (lte)
+
+Matches values less than or equal to the specified value.
+
+<ParamField path="Operation" type="String">lte</ParamField>
+<ParamField path="Type Compatibility" type="Types">Comparable types, primitives</ParamField>
+<ParamField path="Array Support" type="Boolean">Yes (PostgreSQL arrays)</ParamField>
+
+**Examples:**
+
+```bash
+GET /api/posts?likes=lte:200
+GET /api/posts?createDate=lte:2024-12-31T23:59:59Z
+```
+
+### BETWEEN (btw)
+
+Matches values within a range (inclusive). Requires exactly two comma-separated values.
+
+<ParamField path="Operation" type="String">btw</ParamField>
+<ParamField path="Type Compatibility" type="Types">Comparable types, primitives</ParamField>
+<ParamField path="Array Support" type="Boolean">No</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+# Likes between 50 and 200 (inclusive)
+GET /api/posts?likes=btw:50,200
+
+# Date range
+GET /api/posts?createDate=btw:2024-01-01T00:00:00Z,2024-12-31T23:59:59Z
+```
+
+```bash LHS Brackets
+GET /api/posts?likes[btw]=50,200
+GET /api/posts?createDate[btw]=2024-01-01T00:00:00Z,2024-12-31T23:59:59Z
+```
+
+```java Java
+// Allows BETWEEN operation on likes
+@QFElement(value = "likes")
+private int likes;
+
+// Date range filtering
+@QFDate
+@QFElement("createDate")
+private LocalDateTime createDate;
+```
+</CodeGroup>
+
+<Warning>
+  BETWEEN requires exactly 2 comma-separated values. If you provide fewer or more, the operation will fail.
+</Warning>
+
+## String Operations
+
+Specialized operations for string matching. Case sensitivity is controlled by the `caseSensitive` property in `@QFElement`.
+
+### LIKE (like)
+
+Matches strings using wildcard patterns. The `%` character is automatically added at the beginning and end.
+
+<ParamField path="Operation" type="String">like</ParamField>
+<ParamField path="Type Compatibility" type="Types">String only</ParamField>
+<ParamField path="Array Support" type="Boolean">No</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+# Matches any title containing "Spring"
+GET /api/posts?title=like:Spring
+
+# URL encoded for "Spring Boot"
+GET /api/posts?title=like:Spring%20Boot
+```
+
+```bash LHS Brackets
+GET /api/posts?title[like]=Spring
+GET /api/posts?title[like]=Spring%20Boot
+```
+
+```java Java
+// Case-insensitive by default
+@QFElement(value = "title", caseSensitive = false)
+private String title;
+
+// Case-sensitive matching
+@QFElement(value = "code", caseSensitive = true)
+private String code;
+```
+</CodeGroup>
+
+<Info>
+  The LIKE operation automatically wraps your value with `%`. So `title=like:Spring` becomes `WHERE title LIKE '%Spring%'` in SQL.
+</Info>
+
+### NOT_LIKE (nlike)
+
+Matches strings that do NOT match the wildcard pattern.
+
+<ParamField path="Operation" type="String">nlike</ParamField>
+<ParamField path="Type Compatibility" type="Types">String only</ParamField>
+<ParamField path="Array Support" type="Boolean">No</ParamField>
+
+**Examples:**
+
+```bash
+# Exclude titles containing "Draft"
+GET /api/posts?title=nlike:Draft
+```
+
+### REGULAR_LIKE (rlike)
+
+Exact LIKE operation without automatic wildcard wrapping. You must provide wildcards explicitly.
+
+<ParamField path="Operation" type="String">rlike</ParamField>
+<ParamField path="Type Compatibility" type="Types">String only</ParamField>
+<ParamField path="Array Support" type="Boolean">No</ParamField>
+
+**Examples:**
+
+```bash
+# Match titles starting with "Spring" (you control the %)
+GET /api/posts?title=rlike:Spring%
+
+# Match titles containing "Boot" anywhere
+GET /api/posts?title=rlike:%Boot%
+```
+
+### STARTS_WITH (starts)
+
+Matches strings that start with the specified value.
+
+<ParamField path="Operation" type="String">starts</ParamField>
+<ParamField path="Type Compatibility" type="Types">String only</ParamField>
+<ParamField path="Array Support" type="Boolean">No</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+GET /api/posts?title=starts:Spring
+GET /api/posts?author=starts:John
+```
+
+```bash LHS Brackets
+GET /api/posts?title[starts]=Spring
+GET /api/posts?author[starts]=John
+```
+</CodeGroup>
+
+Generates SQL: `WHERE title LIKE 'Spring%'`
+
+### ENDS_WITH (ends)
+
+Matches strings that end with the specified value.
+
+<ParamField path="Operation" type="String">ends</ParamField>
+<ParamField path="Type Compatibility" type="Types">String only</ParamField>
+<ParamField path="Array Support" type="Boolean">No</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+GET /api/posts?title=ends:Tutorial
+GET /api/posts?email=ends:@example.com
+```
+
+```bash LHS Brackets
+GET /api/posts?title[ends]=Tutorial
+GET /api/posts?email[ends]=@example.com
+```
+</CodeGroup>
+
+Generates SQL: `WHERE title LIKE '%Tutorial'`
+
+## Collection Operations
+
+Operations for checking membership in a set of values.
+
+### IN (in)
+
+Matches if the field value is in the provided list. Values are comma-separated.
+
+<ParamField path="Operation" type="String">in</ParamField>
+<ParamField path="Type Compatibility" type="Types">All types</ParamField>
+<ParamField path="Array Support" type="Boolean">Yes (PostgreSQL arrays - checks if array contains value)</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+# Match multiple post types
+GET /api/posts?postType=in:BLOG,NEWS,TUTORIAL
+
+# Match multiple IDs
+GET /api/posts?id=in:1,2,3,5,8
+
+# Match multiple authors
+GET /api/posts?author=in:John,Jane,Bob
+```
+
+```bash LHS Brackets
+GET /api/posts?postType[in]=BLOG,NEWS,TUTORIAL
+GET /api/posts?id[in]=1,2,3,5,8
+```
+
+```java Java
+@QFElement(
+    value = "postType",
+    allowedOperations = {QFOperationEnum.EQUAL, QFOperationEnum.IN}
+)
+private String postType;
+```
+</CodeGroup>
+
+<Note>
+  For PostgreSQL arrays, the IN operation checks if the array contains the specified value(s).
+</Note>
+
+### NOT_IN (nin)
+
+Matches if the field value is NOT in the provided list.
+
+<ParamField path="Operation" type="String">nin</ParamField>
+<ParamField path="Type Compatibility" type="Types">All types</ParamField>
+<ParamField path="Array Support" type="Boolean">Yes (PostgreSQL arrays)</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+# Exclude certain post types
+GET /api/posts?postType=nin:DRAFT,ARCHIVED
+
+# Exclude specific authors
+GET /api/posts?author=nin:Banned1,Banned2
+```
+
+```bash LHS Brackets
+GET /api/posts?postType[nin]=DRAFT,ARCHIVED
+```
+</CodeGroup>
+
+## Null Check Operations
+
+### ISNULL (null)
+
+Checks if a field is null or not null. Takes a boolean value.
+
+<ParamField path="Operation" type="String">null</ParamField>
+<ParamField path="Type Compatibility" type="Types">All types</ParamField>
+<ParamField path="Array Support" type="Boolean">No</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+# Find posts without a category
+GET /api/posts?category=null:true
+
+# Find posts with a category
+GET /api/posts?category=null:false
+
+# Find posts without end date
+GET /api/posts?endDate=null:true
+```
+
+```bash LHS Brackets
+GET /api/posts?category[null]=true
+GET /api/posts?category[null]=false
+```
+
+```java Java
+@QFElement(value = "category.name", joinTypes = {JoinType.LEFT})
+private String category; // LEFT JOIN allows null checks
+```
+</CodeGroup>
+
+<Tip>
+  When checking for null on related entities, use `JoinType.LEFT` to ensure entities without the relationship are included.
+</Tip>
+
+## PostgreSQL Array Operations
+
+Special operations for PostgreSQL array types. These require `arrayTyped = true` in the field definition.
+
+### OVERLAP (ovlp)
+
+Checks if two arrays have any elements in common.
+
+<ParamField path="Operation" type="String">ovlp</ParamField>
+<ParamField path="Type Compatibility" type="Types">PostgreSQL arrays only</ParamField>
+<ParamField path="Array Support" type="Boolean">Required</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+# Find posts with overlapping tags
+GET /api/posts?tags=ovlp:java,spring,kotlin
+```
+
+```bash LHS Brackets
+GET /api/posts?tags[ovlp]=java,spring,kotlin
+```
+
+```java Java
+@QFElement(value = "tags", arrayTyped = true)
+private String[] tags; // PostgreSQL text[] column
+```
+</CodeGroup>
+
+SQL: `WHERE tags && ARRAY['java', 'spring', 'kotlin']`
+
+### NOT_OVERLAP (novlp)
+
+Checks if two arrays have no elements in common.
+
+<ParamField path="Operation" type="String">novlp</ParamField>
+<ParamField path="Type Compatibility" type="Types">PostgreSQL arrays only</ParamField>
+<ParamField path="Array Support" type="Boolean">Required</ParamField>
+
+**Examples:**
+
+```bash
+# Find posts that don't have any of these tags
+GET /api/posts?tags=novlp:deprecated,legacy,old
+```
+
+### CONTAINED (containedBy)
+
+Checks if the array field is completely contained by the provided array.
+
+<ParamField path="Operation" type="String">containedBy</ParamField>
+<ParamField path="Type Compatibility" type="Types">PostgreSQL arrays only</ParamField>
+<ParamField path="Array Support" type="Boolean">Required</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash RHS Colon
+# Find posts where all tags are in the allowed list
+GET /api/posts?tags=containedBy:java,spring,jpa,hibernate,kotlin
+```
+
+```bash LHS Brackets
+GET /api/posts?tags[containedBy]=java,spring,jpa,hibernate,kotlin
+```
+</CodeGroup>
+
+SQL: `WHERE tags <@ ARRAY['java', 'spring', 'jpa', 'hibernate', 'kotlin']`
+
+### NOT_CONTAINED (notContainedBy)
+
+Checks if the array field is NOT completely contained by the provided array.
+
+<ParamField path="Operation" type="String">notContainedBy</ParamField>
+<ParamField path="Type Compatibility" type="Types">PostgreSQL arrays only</ParamField>
+<ParamField path="Array Support" type="Boolean">Required</ParamField>
+
+**Examples:**
+
+```bash
+GET /api/posts?tags=notContainedBy:allowed1,allowed2
+```
+
+## Operation Restrictions
+
+You can restrict which operations are allowed on a field using the `allowedOperations` property.
+
+### Restricting to Specific Operations
+
+```java
+// Only allow exact matches on email
+@QFElement(
+    value = "email",
+    allowedOperations = {QFOperationEnum.EQUAL}
+)
+private String email;
+
+// Allow equality and IN for status
+@QFElement(
+    value = "status",
+    allowedOperations = {QFOperationEnum.EQUAL, QFOperationEnum.IN, QFOperationEnum.NOT_IN}
+)
+private String status;
+
+// Allow comparisons on dates
+@QFDate
+@QFElement(
+    value = "createDate",
+    allowedOperations = {
+        QFOperationEnum.EQUAL,
+        QFOperationEnum.GREATER_THAN,
+        QFOperationEnum.GREATER_EQUAL_THAN,
+        QFOperationEnum.LESS_THAN,
+        QFOperationEnum.LESS_EQUAL_THAN,
+        QFOperationEnum.BETWEEN
+    }
+)
+private LocalDateTime createDate;
+```
+
+### Error Handling
+
+Attempting to use a disallowed operation returns an error:
+
+```bash
+# If LIKE is not in allowedOperations for email
+GET /api/posts?email=like:john
+# Returns: Operation 'like' is not allowed for field 'email'
+```
+
+## Type Compatibility Reference
+
+<AccordionGroup>
+  <Accordion title="All Types" icon="asterisk">
+    - EQUAL (eq)
+    - NOT_EQUAL (ne)
+    - IN (in)
+    - NOT_IN (nin)
+    - ISNULL (null)
+  </Accordion>
+
+  <Accordion title="Comparable Types & Primitives" icon="arrow-up-9-1">
+    Includes: Numbers, Dates, LocalDateTime, Timestamp, etc.
+    
+    - GREATER_THAN (gt)
+    - GREATER_EQUAL_THAN (gte)
+    - LESS_THAN (lt)
+    - LESS_EQUAL_THAN (lte)
+    - BETWEEN (btw)
+  </Accordion>
+
+  <Accordion title="String Only" icon="font">
+    - LIKE (like)
+    - NOT_LIKE (nlike)
+    - REGULAR_LIKE (rlike)
+    - STARTS_WITH (starts)
+    - ENDS_WITH (ends)
+  </Accordion>
+
+  <Accordion title="PostgreSQL Arrays" icon="table-list">
+    Requires `arrayTyped = true`
+    
+    - All basic operations (when arrayTyped)
+    - OVERLAP (ovlp)
+    - NOT_OVERLAP (novlp)
+    - CONTAINED (containedBy)
+    - NOT_CONTAINED (notContainedBy)
+  </Accordion>
+</AccordionGroup>
+
+## Complete Operation Reference
+
+| Operation | Code | Types | Array | Description |
+|-----------|------|-------|-------|-------------|
+| Equal | `eq` | All | Yes | Exact match |
+| Not Equal | `ne` | All | Yes | Not equal to value |
+| Greater Than | `gt` | Comparable | Yes | Greater than value |
+| Greater or Equal | `gte` | Comparable | Yes | Greater than or equal to value |
+| Less Than | `lt` | Comparable | Yes | Less than value |
+| Less or Equal | `lte` | Comparable | Yes | Less than or equal to value |
+| Between | `btw` | Comparable | No | Within range (inclusive) |
+| Like | `like` | String | No | Contains value (wildcards added) |
+| Not Like | `nlike` | String | No | Does not contain value |
+| Regular Like | `rlike` | String | No | Custom wildcard pattern |
+| Starts With | `starts` | String | No | Begins with value |
+| Ends With | `ends` | String | No | Ends with value |
+| In | `in` | All | Yes | In list of values |
+| Not In | `nin` | All | Yes | Not in list of values |
+| Is Null | `null` | All | No | Null check (true/false) |
+| Overlap | `ovlp` | Array | Required | Arrays have common elements |
+| Not Overlap | `novlp` | Array | Required | Arrays have no common elements |
+| Contained By | `containedBy` | Array | Required | Array is subset of provided |
+| Not Contained By | `notContainedBy` | Array | Required | Array is not subset of provided |
+
+<Tip>
+  When in doubt about which operations are available for a field, check the automatically generated documentation or OpenAPI schema for your filter definition.
+</Tip>

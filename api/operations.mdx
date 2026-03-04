@@ -1,0 +1,599 @@
+---
+title: Operations
+description: Complete reference for all filter operations
+---
+
+## Overview
+
+QueryFilterJPA provides four types of operations for different field types. Each operation enum defines specific filtering capabilities.
+
+## QFOperationEnum
+
+Standard operations for element fields (strings, numbers, dates, primitives, arrays).
+
+### Comparison Operations
+
+#### EQUAL (`eq`)
+
+Exact match comparison.
+
+**Syntax:**
+```
+name=eq:John
+name[eq]=John
+```
+
+**Compatible types:** All types
+
+**Array support:** Yes (uses array equality function)
+
+**Example:**
+```java
+filter.addNewField("status", QFOperationEnum.EQUAL, "ACTIVE");
+```
+
+#### NOT_EQUAL (`ne`)
+
+Negated equality comparison.
+
+**Syntax:**
+```
+status=ne:INACTIVE
+status[ne]=INACTIVE
+```
+
+**Compatible types:** All types
+
+**Array support:** Yes
+
+#### GREATER_THAN (`gt`)
+
+Greater than comparison.
+
+**Syntax:**
+```
+age=gt:18
+price[gt]=100.00
+```
+
+**Compatible types:** Numbers, dates, and all `Comparable` types
+
+**Array support:** Yes
+
+#### GREATER_EQUAL_THAN (`gte`)
+
+Greater than or equal comparison.
+
+**Syntax:**
+```
+age=gte:18
+date[gte]=2024-01-01
+```
+
+**Compatible types:** Numbers, dates, and all `Comparable` types
+
+**Array support:** Yes
+
+#### LESS_THAN (`lt`)
+
+Less than comparison.
+
+**Syntax:**
+```
+age=lt:65
+price[lt]=1000
+```
+
+**Compatible types:** Numbers, dates, and all `Comparable` types
+
+**Array support:** Yes
+
+#### LESS_EQUAL_THAN (`lte`)
+
+Less than or equal comparison.
+
+**Syntax:**
+```
+age=lte:65
+date[lte]=2024-12-31
+```
+
+**Compatible types:** Numbers, dates, and all `Comparable` types
+
+**Array support:** Yes
+
+#### BETWEEN (`btw`)
+
+Range comparison (inclusive). Requires exactly two comma-separated values.
+
+**Syntax:**
+```
+age=btw:18,65
+price[btw]=100.00,500.00
+```
+
+**Compatible types:** Numbers, dates, and all `Comparable` types
+
+**Array support:** No
+
+**Example:**
+```java
+filter.addNewField("age", QFOperationEnum.BETWEEN, "18,65");
+```
+
+### String Operations
+
+#### LIKE (`like`)
+
+Pattern matching with wildcards. Automatically adds `%` wildcards around the value.
+
+**Syntax:**
+```
+name=like:John
+email[like]=@example.com
+```
+
+**Compatible types:** String only
+
+**Array support:** No
+
+**Behavior:**
+- Input: `John` → SQL: `LIKE '%John%'`
+- Case sensitivity respects field definition
+
+**Example:**
+```java
+filter.addNewField("email", QFOperationEnum.LIKE, "@example.com");
+```
+
+#### NOT_LIKE (`nlike`)
+
+Negated pattern matching.
+
+**Syntax:**
+```
+name=nlike:test
+email[nlike]=spam
+```
+
+**Compatible types:** String only
+
+**Array support:** No
+
+#### REGULAR_LIKE (`rlike`)
+
+Pattern matching where you provide exact SQL LIKE pattern (with your own `%` wildcards).
+
+**Syntax:**
+```
+name=rlike:J%n
+email[rlike]=%@example.com
+```
+
+**Compatible types:** String only
+
+**Array support:** No
+
+#### STARTS_WITH (`starts`)
+
+Matches strings that start with the given value.
+
+**Syntax:**
+```
+name=starts:John
+url[starts]=https://
+```
+
+**Compatible types:** String only
+
+**Array support:** No
+
+**Behavior:**
+- Input: `John` → SQL: `LIKE 'John%'`
+
+#### ENDS_WITH (`ends`)
+
+Matches strings that end with the given value.
+
+**Syntax:**
+```
+email=ends:@example.com
+filename[ends]=.pdf
+```
+
+**Compatible types:** String only
+
+**Array support:** No
+
+**Behavior:**
+- Input: `@example.com` → SQL: `LIKE '%@example.com'`
+
+### Set Operations
+
+#### IN (`in`)
+
+Matches any of the provided values. Accepts comma-separated list.
+
+**Syntax:**
+```
+status=in:ACTIVE,PENDING,APPROVED
+id[in]=1,2,3,4,5
+```
+
+**Compatible types:** All types
+
+**Array support:** Yes (checks if array contains any value)
+
+**Example:**
+```java
+filter.addNewField("status", QFOperationEnum.IN, Arrays.asList("ACTIVE", "PENDING"));
+```
+
+#### NOT_IN (`nin`)
+
+Negated IN operation.
+
+**Syntax:**
+```
+status=nin:DELETED,ARCHIVED
+id[nin]=1,2,3
+```
+
+**Compatible types:** All types
+
+**Array support:** Yes
+
+### Null Operations
+
+#### ISNULL (`null`)
+
+Checks for null or not null values.
+
+**Syntax:**
+```
+email=null:true      # IS NULL
+email=null:false     # IS NOT NULL
+description[null]=true
+```
+
+**Compatible types:** All types
+
+**Array support:** Yes
+
+**Values:**
+- `true` → IS NULL
+- `false` → IS NOT NULL
+
+**Example:**
+```java
+filter.addNewField("deletedAt", QFOperationEnum.ISNULL, "true");
+```
+
+### PostgreSQL Array Operations
+
+<Note>
+These operations require PostgreSQL database and array-typed fields.
+</Note>
+
+#### OVERLAP (`ovlp`)
+
+Checks if arrays have any common elements.
+
+**Syntax:**
+```
+tags=ovlp:java,spring,boot
+categories[ovlp]=tech,programming
+```
+
+**Compatible types:** PostgreSQL arrays only
+
+**Array support:** Required
+
+**Example:**
+```java
+filter.addNewField("tags", QFOperationEnum.OVERLAP, "java,spring");
+```
+
+#### NOT_OVERLAP (`novlp`)
+
+Checks if arrays have no common elements.
+
+**Syntax:**
+```
+tags=novlp:deprecated,old
+```
+
+**Compatible types:** PostgreSQL arrays only
+
+**Array support:** Required
+
+#### CONTAINED (`containedBy`)
+
+Checks if the field array is contained by the provided values.
+
+**Syntax:**
+```
+tags=containedBy:java,spring,kotlin,boot
+```
+
+**Compatible types:** PostgreSQL arrays only
+
+**Array support:** Required
+
+#### NOT_CONTAINED (`notContainedBy`)
+
+Negated contained by operation.
+
+**Syntax:**
+```
+tags=notContainedBy:old,deprecated
+```
+
+**Compatible types:** PostgreSQL arrays only
+
+**Array support:** Required
+
+## QFOperationJsonEnum
+
+Operations for JSON/JSONB fields (PostgreSQL).
+
+<Note>
+JSON operations use PostgreSQL's `jsonb_extract_path_text` function.
+</Note>
+
+### EQUAL (`eq`)
+
+Exact match for JSON field values.
+
+**Syntax:**
+```
+metadata=eq:{"key":"value"}
+config[eq]={"enabled":"true"}
+```
+
+**Example:**
+```java
+filter.addNewField("metadata", QFOperationJsonEnum.EQUAL, "{\"status\":\"active\"}");
+```
+
+### NOT_EQUAL (`ne`)
+
+Negated equality for JSON field values.
+
+**Syntax:**
+```
+metadata=ne:{"key":"value"}
+```
+
+### LIKE (`like`)
+
+Pattern matching on JSON field values.
+
+**Syntax:**
+```
+metadata=like:{"description":"test"}
+```
+
+**Behavior:** Adds `%` wildcards around values
+
+### STARTS_WITH (`starts`)
+
+Matches JSON values that start with given string.
+
+**Syntax:**
+```
+metadata=starts:{"url":"https://"}
+```
+
+### ENDS_WITH (`ends`)
+
+Matches JSON values that end with given string.
+
+**Syntax:**
+```
+metadata=ends:{"email":"@example.com"}
+```
+
+## QFCollectionOperationEnum
+
+Operations for JPA collection fields (OneToMany, ManyToMany). These operations work on collection size.
+
+### EQUAL (`eq`)
+
+Collection size equals value.
+
+**Syntax:**
+```
+tags=eq:3
+orders[eq]=0
+```
+
+**Example:**
+```java
+filter.addNewField("orders", QFCollectionOperationEnum.EQUAL, 5);
+```
+
+### NOT_EQUAL (`ne`)
+
+Collection size not equal to value.
+
+**Syntax:**
+```
+tags=ne:0
+```
+
+### GREATER_THAN (`gt`)
+
+Collection size greater than value.
+
+**Syntax:**
+```
+orders=gt:10
+```
+
+**Example:**
+```java
+filter.addNewField("comments", QFCollectionOperationEnum.GREATER_THAN, 5);
+```
+
+### GREATER_EQUAL_THAN (`gte`)
+
+Collection size greater than or equal to value.
+
+**Syntax:**
+```
+followers=gte:100
+```
+
+### LESS_THAN (`lt`)
+
+Collection size less than value.
+
+**Syntax:**
+```
+errors=lt:5
+```
+
+### LESS_EQUAL_THAN (`lte`)
+
+Collection size less than or equal to value.
+
+**Syntax:**
+```
+attempts=lte:3
+```
+
+## QFOperationDiscriminatorEnum
+
+Operations for discriminator fields (JPA inheritance).
+
+### EQUAL (`eq`)
+
+Matches specific entity type.
+
+**Syntax:**
+```
+type=eq:PremiumUser
+entityType[eq]=Vehicle
+```
+
+**Example:**
+```java
+filter.addNewField("userType", QFOperationDiscriminatorEnum.EQUAL, "Premium");
+```
+
+### NOT_EQUAL (`ne`)
+
+Excludes specific entity type.
+
+**Syntax:**
+```
+type=ne:GuestUser
+```
+
+### IN (`in`)
+
+Matches any of the specified entity types.
+
+**Syntax:**
+```
+type=in:Premium,VIP,Enterprise
+```
+
+**Example:**
+```java
+filter.addNewField("type", QFOperationDiscriminatorEnum.IN, 
+    Arrays.asList("Premium", "VIP"));
+```
+
+### NOT_IN (`nin`)
+
+Excludes multiple entity types.
+
+**Syntax:**
+```
+type=nin:Guest,Trial
+```
+
+## Operation Compatibility Matrix
+
+| Operation | String | Number | Date | Boolean | Enum | Array | JSON | Collection |
+|-----------|--------|--------|------|---------|------|-------|------|------------|
+| EQUAL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - |
+| NOT_EQUAL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - |
+| GREATER_THAN | - | ✓ | ✓ | - | - | ✓ | - | - |
+| GREATER_EQUAL_THAN | - | ✓ | ✓ | - | - | ✓ | - | - |
+| LESS_THAN | - | ✓ | ✓ | - | - | ✓ | - | - |
+| LESS_EQUAL_THAN | - | ✓ | ✓ | - | - | ✓ | - | - |
+| BETWEEN | - | ✓ | ✓ | - | - | - | - | - |
+| LIKE | ✓ | - | - | - | - | - | ✓ | - |
+| NOT_LIKE | ✓ | - | - | - | - | - | - | - |
+| REGULAR_LIKE | ✓ | - | - | - | - | - | - | - |
+| STARTS_WITH | ✓ | - | - | - | - | - | ✓ | - |
+| ENDS_WITH | ✓ | - | - | - | - | - | ✓ | - |
+| IN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | - |
+| NOT_IN | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | - |
+| ISNULL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | - | - |
+| OVERLAP | - | - | - | - | - | ✓ (PG) | - | - |
+| CONTAINED | - | - | - | - | - | ✓ (PG) | - | - |
+| Collection Size | - | - | - | - | - | - | - | ✓ |
+
+**Legend:**
+- ✓ = Supported
+- - = Not supported
+- PG = PostgreSQL only
+
+## Usage Examples
+
+### Combining Multiple Operations
+
+```java
+QueryFilter<Product> filter = processor.newQueryFilter(
+    "name=like:phone&price=btw:100,1000&category=in:Electronics,Gadgets&inStock=eq:true",
+    QFParamType.RHS_COLON
+);
+```
+
+### Programmatic Filter Building
+
+```java
+QueryFilter<User> filter = processor.newQueryFilter("", QFParamType.RHS_COLON);
+
+// Add filters
+filter.addNewField("email", QFOperationEnum.ENDS_WITH, "@company.com");
+filter.addNewField("age", QFOperationEnum.GREATER_EQUAL_THAN, "18");
+filter.addNewField("status", QFOperationEnum.IN, Arrays.asList("ACTIVE", "VERIFIED"));
+filter.addNewField("deletedAt", QFOperationEnum.ISNULL, "true");
+
+// For collections
+filter.addNewField("orders", QFCollectionOperationEnum.GREATER_THAN, 0);
+
+// For JSON fields
+filter.addNewField("preferences", QFOperationJsonEnum.EQUAL, "{\"theme\":\"dark\"}");
+```
+
+### PostgreSQL Array Operations
+
+```java
+QueryFilter<Article> filter = processor.newQueryFilter(
+    "tags=ovlp:java,spring,boot&categories=containedBy:tech,programming,tutorial",
+    QFParamType.RHS_COLON
+);
+```
+
+## Best Practices
+
+1. **Choose appropriate operations** - Use type-specific operations (e.g., LIKE for strings, BETWEEN for ranges)
+2. **Validate input** - Ensure operation and field type compatibility
+3. **Use IN for multiple values** - More efficient than multiple EQUAL operations
+4. **Consider performance** - LIKE operations can be slower on large datasets
+5. **Index fields** - Add database indexes for frequently filtered fields
+6. **Array operations** - Only use on PostgreSQL with proper array types
+7. **JSON operations** - Ensure your database supports JSON functions
+
+## See Also
+
+- [QueryFilter](/api/query-filter) - Main filter class API
+- [QFParamType](/api/qf-param-type) - Parameter syntax types
+- [Filter Definitions](/concepts/filter-definitions) - Defining filterable fields
+- [Type Converters](/advanced/custom-converters) - Custom type conversion

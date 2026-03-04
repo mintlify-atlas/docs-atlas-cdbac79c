@@ -1,0 +1,181 @@
+---
+title: Introduction to QueryFilterJPA
+description: Learn how QueryFilterJPA simplifies dynamic filtering in Spring Boot JPA applications
+---
+
+## What is QueryFilterJPA?
+
+QueryFilterJPA is a powerful Spring Boot library that simplifies the creation of dynamic, type-safe filters for JPA queries. Instead of writing complex JPA Specifications or Criteria API code for every filterable endpoint, you define your filters once using simple annotations and let QueryFilterJPA handle the rest.
+
+## The Problem It Solves
+
+When building REST APIs with Spring Boot and JPA, implementing flexible filtering is often tedious and repetitive:
+
+- **Complex Specifications**: Writing JPA Specifications for each filter combination is verbose and error-prone
+- **Type Safety**: String-based query parameters lack compile-time validation
+- **Documentation**: Manually documenting all filter options in OpenAPI/Swagger is time-consuming
+- **Query Syntax**: Implementing consistent filter syntax across endpoints requires custom parsing logic
+
+QueryFilterJPA eliminates these pain points by providing a declarative, annotation-based approach to filtering.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Easy Annotations" icon="at">
+    Define filterable fields with simple `@QFElement` annotations on your filter definition class
+  </Card>
+  
+  <Card title="Dual Syntax Support" icon="code">
+    Supports both RHS Colon (`field=eq:value`) and LHS Brackets (`field[eq]=value`) syntax out of the box
+  </Card>
+  
+  <Card title="Auto OpenAPI Docs" icon="book">
+    Automatically generates OpenAPI/Swagger documentation for all your filters
+  </Card>
+  
+  <Card title="PostgreSQL Support" icon="database">
+    Advanced filtering for PostgreSQL arrays, JSON fields, and other PostgreSQL-specific types
+  </Card>
+  
+  <Card title="JPA Integration" icon="link">
+    Seamless integration with `JpaSpecificationExecutor` - works with your existing repositories
+  </Card>
+  
+  <Card title="Flexible Parameters" icon="sliders">
+    Use `@QFParam` for single filter parameter or `@QFMultiParam` for multiple filter parameters
+  </Card>
+</CardGroup>
+
+## When to Use QueryFilterJPA
+
+QueryFilterJPA is ideal for:
+
+✅ **REST APIs with complex filtering needs** - E-commerce product catalogs, admin dashboards, reporting systems
+
+✅ **Multi-tenant applications** - Filter data by tenant, roles, permissions, etc.
+
+✅ **Data-heavy applications** - Applications that need to expose flexible filtering to end users
+
+✅ **Microservices** - Standardize filtering across multiple services with consistent syntax
+
+<Note>
+QueryFilterJPA works with both **Spring Boot 3** and **Spring Boot 4** through dedicated artifact versions.
+</Note>
+
+## How It Works
+
+QueryFilterJPA follows a simple three-step pattern:
+
+<Steps>
+  <Step title="Define Your Filter">
+    Create a filter definition class annotated with `@QFDefinitionClass`, specifying which fields can be filtered.
+    
+    ```java
+    @QFDefinitionClass(PostBlog.class)
+    public class PostFilterDef {
+        @QFElement("author")
+        private String author;
+        
+        @QFElement("likes")
+        private int likes;
+        
+        @QFDate
+        @QFElement("createDate")
+        private LocalDateTime createDate;
+    }
+    ```
+  </Step>
+  
+  <Step title="Enable QueryFilter">
+    Add `@EnableQueryFilter` to your Spring Boot application configuration.
+    
+    ```java
+    @EnableQueryFilter(basePackageClasses = PostFilterDef.class)
+    @SpringBootApplication
+    public class Application {
+        // ...
+    }
+    ```
+  </Step>
+  
+  <Step title="Use in Controllers">
+    Inject the `QueryFilter` into your controller methods using `@QFParam` or `@QFMultiParam`.
+    
+    ```java
+    @GetMapping("/posts")
+    public List<PostBlog> getPosts(
+        @RequestParam(defaultValue = "") @QFParam(PostFilterDef.class) QueryFilter<PostBlog> filter) {
+        return repository.findAll(filter);
+    }
+    ```
+  </Step>
+</Steps>
+
+That's it! Your endpoint now supports powerful filtering:
+
+```bash
+GET /posts?filter=author=eq:john&likes=gte:100&sort=-createDate
+```
+
+## Architecture Overview
+
+QueryFilterJPA consists of several key components:
+
+### Filter Definition Layer
+
+- **`@QFDefinitionClass`**: Marks a class as a filter definition and links it to a JPA entity
+- **`@QFElement`**: Defines a filterable field with support for nested properties, operations, and type handling
+- **`@QFDate`**: Handles date/time filtering with proper parsing and timezone support
+- **`@QFSortable`**: Enables sorting on specific fields
+
+### Controller Integration Layer
+
+- **`@QFParam`**: Binds a single `filter` parameter to a `QueryFilter` object
+- **`@QFMultiParam`**: Binds multiple individual query parameters to a filter definition
+- **`QueryFilter<T>`**: Type-safe filter object that implements JPA `Specification<T>`
+
+### Query Processing Layer
+
+At runtime, QueryFilterJPA:
+
+1. Parses incoming query parameters according to the selected syntax (RHS Colon or LHS Brackets)
+2. Validates filter fields against the filter definition
+3. Applies type conversions and validations
+4. Generates JPA Criteria API predicates
+5. Returns a `Specification` that can be used with `JpaSpecificationExecutor`
+
+<Tip>
+QueryFilterJPA is fully compatible with Spring Data JPA's `JpaSpecificationExecutor`, so you can combine generated filters with custom specifications.
+</Tip>
+
+## Supported Operations
+
+QueryFilterJPA supports a rich set of filter operations:
+
+| Operation | Syntax | Description |
+|-----------|--------|-------------|
+| Equal | `eq:value` | Exact match |
+| Not Equal | `ne:value` | Not equal to value |
+| Greater Than | `gt:value` | Greater than |
+| Greater or Equal | `gte:value` | Greater than or equal |
+| Less Than | `lt:value` | Less than |
+| Less or Equal | `lte:value` | Less than or equal |
+| Like | `like:value` | Pattern matching (SQL LIKE) |
+| Starts With | `starts:value` | Starts with value |
+| Ends With | `ends:value` | Ends with value |
+| In | `in:val1,val2` | Value in list |
+| Not In | `nin:val1,val2` | Value not in list |
+
+## Next Steps
+
+Ready to get started? Continue to the next sections:
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Add QueryFilterJPA to your Spring Boot project
+  </Card>
+  
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Build your first filtered endpoint in 5 minutes
+  </Card>
+</CardGroup>

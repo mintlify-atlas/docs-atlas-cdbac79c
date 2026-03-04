@@ -1,0 +1,554 @@
+---
+title: "Custom Converters"
+description: "Integrate QueryFilter with Spring MVC using custom converters"
+---
+
+QueryFilterJPA provides the `QFCustomConverter` class to seamlessly integrate query filters into Spring Boot REST controllers. This enables automatic conversion of query string parameters into `QueryFilter` objects.
+
+## Overview
+
+The custom converter system allows you to:
+
+1. **Automatically parse query strings**: Convert HTTP query parameters directly to `QueryFilter` objects
+2. **Use filters in controllers**: Inject filters as method parameters with `@QFParam`
+3. **Support multiple formats**: Handle different query parameter formats
+4. **Enable base64 encoding**: Support encoded filter strings for complex queries
+
+## How It Works
+
+QueryFilterJPA registers a Spring `GenericConverter` that:
+
+1. Detects `@QFParam` annotations on controller method parameters
+2. Identifies the filter definition class and entity type
+3. Converts the query string to a `QueryFilter` instance
+4. Provides the filter to your controller method
+
+## Setup
+
+### Auto-Configuration
+
+With Spring Boot auto-configuration, the converter is registered automatically:
+
+```xml
+<!-- Maven dependency -->
+<dependency>
+    <groupId>io.github.acoboh</groupId>
+    <artifactId>query-filter-jpa-spring-boot-starter</artifactId>
+    <version>${query-filter-jpa.version}</version>
+</dependency>
+```
+
+No additional configuration needed!
+
+### Manual Configuration
+
+If not using Spring Boot auto-configuration, register the converter manually:
+
+```java
+@Configuration
+public class QueryFilterConfig implements WebMvcConfigurer {
+    
+    @Autowired
+    private List<QFProcessor<?, ?>> queryFilterProcessors;
+    
+    @Override
+    public void addFormatters(FormatterRegistry registry) {
+        registry.addConverter(new QFCustomConverter(queryFilterProcessors));
+    }
+}
+```
+
+## Basic Usage
+
+### Filter Definition
+
+Define your filter class:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class FilterBlogDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("text")
+    private String text;
+    
+    @QFElement("published")
+    private Boolean published;
+    
+    @QFElement("avgNote")
+    private Double avgNote;
+}
+```
+
+### Controller Integration
+
+Use `@QFParam` in your controller:
+
+```java
+@RestController
+@RequestMapping("/api/posts")
+public class PostController {
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    @GetMapping
+    public List<PostBlog> getPosts(
+        @QFParam(FilterBlogDef.class) QueryFilter<PostBlog> filter
+    ) {
+        return repository.findAll(filter);
+    }
+}
+```
+
+### Making Requests
+
+Query with standard HTTP parameters:
+
+```bash
+# Filter by author
+GET /api/posts?filter=author=eq:John
+
+# Multiple filters
+GET /api/posts?filter=author=eq:John&published=eq:true
+
+# Complex query
+GET /api/posts?filter=author=like:%Smith&avgNote=gte:4.0
+```
+
+## Parameter Formats
+
+### RHS Colon Format
+
+Default format with operation after colon:
+
+```bash
+GET /api/posts?filter=author=eq:John&published=eq:true
+```
+
+```java
+@GetMapping
+public List<PostBlog> getPosts(
+    @QFParam(value = FilterBlogDef.class, type = QFParamType.RHS_COLON)
+    QueryFilter<PostBlog> filter
+) {
+    return repository.findAll(filter);
+}
+```
+
+### LHS Brackets Format
+
+Operation in brackets on left side:
+
+```bash
+GET /api/posts?filter=author[eq]=John&published[eq]=true
+```
+
+```java
+@GetMapping
+public List<PostBlog> getPosts(
+    @QFParam(value = FilterBlogDef.class, type = QFParamType.LHS_BRACKETS)
+    QueryFilter<PostBlog> filter
+) {
+    return repository.findAll(filter);
+}
+```
+
+## Advanced Features
+
+### Base64 Encoding
+
+For complex queries or special characters, use base64 encoding:
+
+```java
+@GetMapping("/encoded")
+public List<PostBlog> getPostsEncoded(
+    @QFParam(value = FilterBlogDef.class, base64Encoded = true)
+    QueryFilter<PostBlog> filter
+) {
+    return repository.findAll(filter);
+}
+```
+
+Client usage:
+
+```java
+// Client-side
+String filterString = "author=eq:John&text=like:%special chars%";
+String encoded = Base64.getEncoder().encodeToString(
+    filterString.getBytes(StandardCharsets.UTF_8)
+);
+
+// Request
+GET /api/posts/encoded?filter=YXV0aG9yPWVxOkpvaG4mdGV4dD1saWtlOiVzcGVjaWFsIGNoYXJzJQ==
+```
+
+### Multiple Filter Definitions
+
+Use different filters on different endpoints:
+
+```java
+@RestController
+@RequestMapping("/api/posts")
+public class PostController {
+    
+    @GetMapping
+    public List<PostBlog> getPosts(
+        @QFParam(FilterBlogDef.class) QueryFilter<PostBlog> filter
+    ) {
+        return repository.findAll(filter);
+    }
+    
+    @GetMapping("/detailed")
+    public List<PostBlog> getDetailedPosts(
+        @QFParam(DetailedFilterBlogDef.class) QueryFilter<PostBlog> filter
+    ) {
+        return repository.findAll(filter);
+    }
+}
+```
+
+### Optional Filters
+
+Make filters optional using `@RequestParam`:
+
+```java
+@GetMapping
+public List<PostBlog> getPosts(
+    @RequestParam(required = false)
+    @QFParam(FilterBlogDef.class)
+    QueryFilter<PostBlog> filter
+) {
+    if (filter == null) {
+        // Return all posts
+        return repository.findAll();
+    }
+    return repository.findAll(filter);
+}
+```
+
+### Pagination Integration
+
+Combine with Spring Data pagination:
+
+```java
+@GetMapping
+public Page<PostBlog> getPosts(
+    @QFParam(FilterBlogDef.class) QueryFilter<PostBlog> filter,
+    Pageable pageable
+) {
+    return repository.findAll(filter, pageable);
+}
+```
+
+Client request:
+
+```bash
+GET /api/posts?filter=author=eq:John&page=0&size=20&sort=createdDate,desc
+```
+
+### Sorting Integration
+
+Combine filters with sorting:
+
+```java
+@GetMapping
+public List<PostBlog> getPosts(
+    @QFParam(FilterBlogDef.class) QueryFilter<PostBlog> filter,
+    @RequestParam(required = false) String sort
+) {
+    if (sort != null) {
+        filter.addSort(sort);
+    }
+    return repository.findAll(filter);
+}
+```
+
+## Complete Example
+
+### Entity
+
+```java
+@Entity
+public class PostBlog {
+    @Id
+    @GeneratedValue
+    private Long id;
+    
+    private String author;
+    private String text;
+    private Boolean published;
+    private Double avgNote;
+    private LocalDateTime createDate;
+    
+    @OneToMany(mappedBy = "postBlog")
+    private Set<Comments> comments;
+}
+```
+
+### Filter Definition
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class FilterBlogDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("text")
+    private String text;
+    
+    @QFElement("published")
+    private Boolean published;
+    
+    @QFElement("avgNote")
+    private Double avgNote;
+    
+    @QFElement("createDate")
+    private LocalDateTime createDate;
+    
+    @QFCollectionElement("comments")
+    private int commentCount;
+}
+```
+
+### Repository
+
+```java
+public interface PostBlogRepository extends JpaRepository<PostBlog, Long>,
+                                            QFSpecificationExecutor<PostBlog> {
+}
+```
+
+### Controller
+
+```java
+@RestController
+@RequestMapping("/api/posts")
+public class PostController {
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    @GetMapping
+    public Page<PostBlog> getPosts(
+        @QFParam(FilterBlogDef.class) QueryFilter<PostBlog> filter,
+        Pageable pageable
+    ) {
+        return repository.findAll(filter, pageable);
+    }
+    
+    @GetMapping("/{id}")
+    public PostBlog getPost(@PathVariable Long id) {
+        return repository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Post not found"
+            ));
+    }
+    
+    @GetMapping("/count")
+    public long countPosts(
+        @QFParam(FilterBlogDef.class) QueryFilter<PostBlog> filter
+    ) {
+        return repository.count(filter);
+    }
+}
+```
+
+### Example Requests
+
+```bash
+# Get all published posts by John
+GET /api/posts?filter=author=eq:John&published=eq:true
+
+# Get posts with high rating
+GET /api/posts?filter=avgNote=gte:4.5
+
+# Get recent posts with comments
+GET /api/posts?filter=createDate=gte:2024-01-01&commentCount=gt:0
+
+# Combined with pagination
+GET /api/posts?filter=author=like:%Smith&page=0&size=10&sort=createDate,desc
+
+# Complex encoded query
+GET /api/posts?filter=<base64-encoded-string>
+```
+
+## Error Handling
+
+Handle converter errors gracefully:
+
+```java
+@RestControllerAdvice
+public class QueryFilterExceptionHandler {
+    
+    @ExceptionHandler(QFParseException.class)
+    public ResponseEntity<ErrorResponse> handleParseException(
+        QFParseException ex
+    ) {
+        return ResponseEntity
+            .badRequest()
+            .body(new ErrorResponse(
+                "Invalid filter format",
+                ex.getMessage()
+            ));
+    }
+    
+    @ExceptionHandler(QFFieldNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleFieldNotFoundException(
+        QFFieldNotFoundException ex
+    ) {
+        return ResponseEntity
+            .badRequest()
+            .body(new ErrorResponse(
+                "Unknown filter field",
+                "Field '" + ex.getFieldName() + "' is not available for filtering"
+            ));
+    }
+    
+    @ExceptionHandler(QFOperationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleOperationNotFoundException(
+        QFOperationNotFoundException ex
+    ) {
+        return ResponseEntity
+            .badRequest()
+            .body(new ErrorResponse(
+                "Invalid operation",
+                "Operation '" + ex.getOperation() + "' is not supported"
+            ));
+    }
+}
+```
+
+## Testing
+
+### Unit Tests
+
+Test the converter directly:
+
+```java
+@SpringBootTest
+class ConverterTests {
+    
+    @Autowired
+    private ConversionService conversionService;
+    
+    @Test
+    void testConversionFilterToQueryFilter() throws Exception {
+        // Setup type descriptors
+        Method method = TestClass.class.getDeclaredMethod(
+            "testMethod",
+            QueryFilter.class
+        );
+        Annotation[] annotations = method.getParameters()[0].getAnnotations();
+        
+        TypeDescriptor sourceDescriptor = new TypeDescriptor(
+            ResolvableType.forClass(String.class),
+            String.class,
+            null
+        );
+        
+        ResolvableType type = ResolvableType.forClassWithGenerics(
+            QueryFilter.class,
+            PostBlog.class
+        );
+        
+        TypeDescriptor targetDescriptor = new TypeDescriptor(
+            type,
+            QueryFilter.class,
+            annotations
+        );
+        
+        // Convert
+        Object converted = conversionService.convert(
+            "author=eq:John",
+            sourceDescriptor,
+            targetDescriptor
+        );
+        
+        // Verify
+        assertThat(converted).isNotNull();
+        assertThat(converted).isInstanceOf(QueryFilter.class);
+        
+        QueryFilter<?> filter = (QueryFilter<?>) converted;
+        assertThat(filter.getInitialInput()).isEqualTo("author=eq:John");
+    }
+    
+    static class TestClass {
+        public void testMethod(
+            @QFParam(FilterBlogDef.class) QueryFilter<PostBlog> filter
+        ) {}
+    }
+}
+```
+
+### Integration Tests
+
+Test with Spring MockMvc:
+
+```java
+@SpringBootTest
+@AutoConfigureMockMvc
+class PostControllerTest {
+    
+    @Autowired
+    private MockMvc mockMvc;
+    
+    @Test
+    void testFilterByAuthor() throws Exception {
+        mockMvc.perform(get("/api/posts")
+                .param("filter", "author=eq:John"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray())
+            .andExpect(jsonPath("$[*].author").value(everyItem(is("John"))));
+    }
+    
+    @Test
+    void testFilterWithPagination() throws Exception {
+        mockMvc.perform(get("/api/posts")
+                .param("filter", "published=eq:true")
+                .param("page", "0")
+                .param("size", "10")
+                .param("sort", "createDate,desc"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content").isArray())
+            .andExpect(jsonPath("$.size").value(10));
+    }
+    
+    @Test
+    void testInvalidFilter() throws Exception {
+        mockMvc.perform(get("/api/posts")
+                .param("filter", "invalidField=eq:value"))
+            .andExpect(status().isBadRequest());
+    }
+}
+```
+
+## Best Practices
+
+1. **Use consistent parameter names**: Standardize on `filter` or `q` for query parameters
+2. **Document available filters**: Provide API documentation listing filterable fields
+3. **Validate input**: Use `allowedOperations` to prevent expensive queries
+4. **Handle errors gracefully**: Provide clear error messages for invalid filters
+5. **Consider rate limiting**: Filter queries can be resource-intensive
+6. **Log filter usage**: Monitor which filters are used most frequently
+7. **Cache when appropriate**: Cache filter results for common queries
+8. **Use base64 for complex filters**: Avoid URL encoding issues with special characters
+
+## Performance Tips
+
+1. **Enable query result caching**: Cache filter results at the repository or service layer
+2. **Use pagination**: Always paginate filter results to limit result set size
+3. **Monitor slow queries**: Log and analyze slow filter queries
+4. **Index filter fields**: Ensure all filterable fields are properly indexed
+5. **Limit filter complexity**: Restrict the number of combined filters if needed
+
+<Tip>
+Combine `QFCustomConverter` with Spring Data's `Pageable` for powerful, flexible APIs that clients can easily customize.
+</Tip>
+
+<Warning>
+Always validate and sanitize filter inputs, especially when allowing user-provided filter strings. Use `allowedOperations` to restrict potentially expensive operations.
+</Warning>

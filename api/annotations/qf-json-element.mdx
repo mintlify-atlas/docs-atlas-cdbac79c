@@ -1,0 +1,301 @@
+---
+title: "@QFJsonElement"
+description: "Filter JSON columns in JPA entities"
+---
+
+## Overview
+
+`@QFJsonElement` is a specialized annotation for filtering JSON columns in JPA entities. It enables querying JSON data stored in database columns, typically using database-specific JSON functions.
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target({ FIELD, ANNOTATION_TYPE })
+public @interface QFJsonElement
+```
+
+## Properties
+
+<ParamField path="value" type="String" required>
+  Path to the JSON column in the entity.
+  
+  This is the full path from the entity root to the JSON column property.
+  
+  Example: `"metadata"`, `"settings.preferences"`
+</ParamField>
+
+<ParamField path="name" type="String" default="(empty string)">
+  Custom name to use in filter queries.
+  
+  If not specified, the field name from the filter definition class will be used.
+</ParamField>
+
+<ParamField path="caseSensitive" type="boolean" default="false">
+  Enable case-sensitive matching for string operations.
+  
+  - `true`: "Example" matches only "Example"
+  - `false`: "Example" matches "EXAMPLE", "example", "eXAmple", etc.
+</ParamField>
+
+<ParamField path="joinTypes" type="JoinType[]" default="{ JoinType.INNER }">
+  Specify join types for nested property paths.
+  
+  - Single value: applied to all joins
+  - Multiple values: first value for first join, last value for remaining joins
+  
+  Example: `{LEFT, INNER}` - first join is LEFT, rest are INNER
+</ParamField>
+
+<ParamField path="allowedOperations" type="QFOperationJsonEnum[]" default="{}">
+  Restrict which JSON operations are allowed for this element.
+  
+  If empty, all applicable operations are allowed. Available operations:
+  - `EQUAL`
+  - `NOT_EQUAL`
+  - `CONTAINS`
+  - `NOT_CONTAINS`
+  
+  Example: `allowedOperations = {QFOperationJsonEnum.EQUAL, QFOperationJsonEnum.CONTAINS}`
+</ParamField>
+
+<ParamField path="defaultValue" type="String" default="(empty string)">
+  Default value to use if the filter is not specified.
+  
+  If empty, no default value is applied.
+</ParamField>
+
+<ParamField path="defaultOperation" type="QFOperationJsonEnum" default="EQUAL">
+  Default operation to use with `defaultValue`.
+  
+  Only applied if `defaultValue` is not empty.
+</ParamField>
+
+<ParamField path="order" type="int" default="0">
+  Processing order for this filter element.
+  
+  Lower numbers are processed first. Useful for defining filter evaluation sequence.
+</ParamField>
+
+## Usage Examples
+
+### Basic JSON Column Filter
+
+```java
+// Entity
+@Entity
+public class Product {
+    @Id
+    private Long id;
+    
+    private String name;
+    
+    @Column(columnDefinition = "jsonb")
+    private String metadata;  // JSON column
+}
+
+// Filter Definition
+@QFDefinitionClass(Product.class)
+public class ProductFilterDef {
+    
+    @QFJsonElement("metadata")
+    private String metadata;
+}
+```
+
+**Usage:**
+```
+GET /api/products?metadata=eq:{"color":"red"}
+```
+
+### JSON Path Filtering
+
+```java
+@QFJsonElement(value = "settings.theme", name = "theme")
+private String theme;
+```
+
+**Usage:**
+```
+GET /api/users?theme=eq:dark
+```
+
+### Case-Sensitive JSON Matching
+
+```java
+@QFJsonElement(value = "metadata", caseSensitive = true)
+private String metadata;
+```
+
+### Limited Operations
+
+```java
+@QFJsonElement(
+    value = "tags",
+    allowedOperations = {
+        QFOperationJsonEnum.CONTAINS,
+        QFOperationJsonEnum.NOT_CONTAINS
+    }
+)
+private String tags;
+```
+
+**Usage:**
+```
+GET /api/articles?tags=contains:java
+```
+
+### Default JSON Filter
+
+```java
+@QFJsonElement(
+    value = "status",
+    defaultValue = "{\"active\":true}",
+    defaultOperation = QFOperationJsonEnum.EQUAL
+)
+private String status;
+```
+
+When no `status` filter is provided, it defaults to filtering for active records.
+
+### Complex JSON Filtering
+
+```java
+@QFDefinitionClass(Document.class)
+public class DocumentFilterDef {
+    
+    @QFJsonElement(value = "metadata.author", name = "author")
+    private String author;
+    
+    @QFJsonElement(value = "metadata.tags", name = "tags")
+    private String tags;
+    
+    @QFJsonElement(value = "metadata.version", name = "version")
+    private String version;
+}
+```
+
+**Usage:**
+```
+GET /api/documents?author=eq:John&tags=contains:important&version=gte:2.0
+```
+
+### JSON with Nested Entities
+
+```java
+@Entity
+public class Order {
+    @Id
+    private Long id;
+    
+    @ManyToOne
+    private Customer customer;
+    
+    @Column(columnDefinition = "jsonb")
+    private String metadata;
+}
+
+@QFDefinitionClass(Order.class)
+public class OrderFilterDef {
+    
+    @QFJsonElement(
+        value = "customer.preferences",
+        joinTypes = {JoinType.LEFT}
+    )
+    private String customerPreferences;
+}
+```
+
+### Ordered JSON Filters
+
+```java
+@QFDefinitionClass(User.class)
+public class UserFilterDef {
+    
+    @QFJsonElement(value = "settings.locale", order = 1)
+    private String locale;
+    
+    @QFJsonElement(value = "settings.timezone", order = 2)
+    private String timezone;
+    
+    @QFElement(value = "username", order = 0)
+    private String username;
+}
+```
+
+Filters are processed in order: username (0), locale (1), timezone (2).
+
+## JSON Operations
+
+### EQUAL
+Exact match of JSON value.
+
+```
+GET /api/products?color=eq:red
+```
+
+### NOT_EQUAL
+JSON value does not match.
+
+```
+GET /api/products?color=ne:blue
+```
+
+### CONTAINS
+JSON contains the specified value (useful for arrays or partial matching).
+
+```
+GET /api/articles?tags=contains:java
+```
+
+### NOT_CONTAINS
+JSON does not contain the specified value.
+
+```
+GET /api/articles?tags=ncontains:deprecated
+```
+
+## Database Support
+
+JSON filtering support varies by database:
+
+- **PostgreSQL**: Full support with `jsonb` type and operators
+- **MySQL**: Supports JSON functions (5.7+)
+- **Oracle**: Supports JSON operations (12c+)
+- **H2**: Limited JSON support
+
+Ensure your database supports JSON operations before using this annotation.
+
+## Entity Example with JSONB
+
+```java
+@Entity
+public class Product {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    
+    @Column(columnDefinition = "jsonb")
+    @Type(JsonBinaryType.class)  // Hibernate type
+    private Map<String, Object> metadata;
+    
+    // Getters and setters
+}
+```
+
+## Filter Definition Best Practices
+
+1. **Use specific paths** instead of filtering entire JSON columns
+2. **Limit operations** with `allowedOperations` to prevent complex queries
+3. **Set defaults** for common filtering scenarios
+4. **Use proper indexing** on JSON columns in your database
+5. **Validate JSON structure** at the application level
+
+## Related Annotations
+
+- [`@QFElement`](/api/annotations/qf-element) - Standard field filtering
+- [`@QFCollectionElement`](/api/annotations/qf-collection-element) - Collection filtering
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define the entity filter

@@ -1,0 +1,139 @@
+---
+title: "@QFDefinitionClass"
+description: "Define a filter definition class for a JPA entity"
+---
+
+## Overview
+
+`@QFDefinitionClass` is a class-level annotation that marks a class as a query filter definition for a specific JPA entity. This annotation binds the filter definition to an entity class and configures global filtering behavior such as sorting, distinct queries, and default predicates.
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target(TYPE)
+public @interface QFDefinitionClass
+```
+
+## Properties
+
+<ParamField path="value" type="Class<?>" required>
+  The JPA entity class to be filtered.
+  
+  This is the entity class that this filter definition will apply to.
+  
+  Example: `@QFDefinitionClass(User.class)`
+</ParamField>
+
+<ParamField path="sortable" type="boolean" default="true">
+  Enable or disable sorting for all fields in this filter.
+  
+  When set to `false`, sorting will be disabled globally for this filter, regardless of individual field settings.
+</ParamField>
+
+<ParamField path="defaultPredicate" type="String" default="(empty string)">
+  Name of the default predicate to use for this filter.
+  
+  When specified, this predicate will be applied by default. Empty string means no default predicate.
+  
+  See [`@QFPredicate`](/api/annotations/qf-predicate) for defining custom predicates.
+</ParamField>
+
+<ParamField path="distinct" type="boolean" default="true">
+  Enable or disable DISTINCT on the JPA query.
+  
+  When `true`, duplicate results will be eliminated from the query results.
+</ParamField>
+
+<ParamField path="defaultSort" type="QFDefaultSort[]" default="{}">
+  Default sorting options for this filter.
+  
+  Allows you to specify one or more default sort criteria. These will be applied automatically unless the filter is manually cleared or manipulated with other sorting options.
+  
+  Each `QFDefaultSort` has:
+  - `value` (String): Property name to sort by
+  - `direction` (Direction): Sort direction (ASC or DESC), defaults to ASC
+</ParamField>
+
+## Usage Examples
+
+### Basic Definition
+
+```java
+@QFDefinitionClass(User.class)
+public class UserFilterDef {
+    
+    @QFElement("username")
+    private String username;
+    
+    @QFElement("email")
+    private String email;
+}
+```
+
+### With Default Sorting
+
+```java
+@QFDefinitionClass(
+    value = Product.class,
+    defaultSort = {
+        @QFDefaultSort(value = "createdAt", direction = Direction.DESC),
+        @QFDefaultSort(value = "name", direction = Direction.ASC)
+    }
+)
+public class ProductFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("price")
+    private BigDecimal price;
+}
+```
+
+### Disable Sorting and Distinct
+
+```java
+@QFDefinitionClass(
+    value = Log.class,
+    sortable = false,
+    distinct = false
+)
+public class LogFilterDef {
+    
+    @QFElement("level")
+    private String level;
+    
+    @QFElement("message")
+    private String message;
+}
+```
+
+### With Default Predicate
+
+```java
+@QFDefinitionClass(
+    value = Order.class,
+    defaultPredicate = "activeOrders"
+)
+@QFPredicate(
+    name = "activeOrders",
+    expression = "status AND createdAt"
+)
+public class OrderFilterDef {
+    
+    @QFElement("status")
+    private OrderStatus status;
+    
+    @QFElement("createdAt")
+    private LocalDateTime createdAt;
+}
+```
+
+## Related Annotations
+
+- [`@EnableQueryFilter`](/api/annotations/enable-query-filter) - Enable component scanning for filter definitions
+- [`@QFElement`](/api/annotations/qf-element) - Define filterable fields
+- [`@QFPredicate`](/api/annotations/qf-predicate) - Create custom predicates
+- [`@QFSortable`](/api/annotations/qf-sortable) - Define sortable-only fields

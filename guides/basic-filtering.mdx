@@ -1,0 +1,344 @@
+---
+title: Basic Filtering
+description: Learn how to set up and use basic filtering with QueryFilterJPA
+---
+
+## Overview
+
+QueryFilterJPA provides a powerful way to filter JPA entities through query parameters. This guide covers the fundamentals of setting up and using basic filters in your Spring Boot application.
+
+## Setting Up Basic Filters
+
+<Steps>
+
+### Step 1: Create Your Entity
+
+First, define your JPA entity:
+
+```java
+@Entity
+public class PostBlog {
+    @Id
+    private UUID uuid;
+    private String author;
+    private String title;
+    private int likes;
+    private LocalDateTime createDate;
+    private boolean published;
+    
+    // getters and setters
+}
+```
+
+### Step 2: Define Your Filter
+
+Create a filter definition class using `@QFDefinitionClass`:
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+
+    @QFElement("title")
+    private String title;
+
+    @QFElement("author")
+    private String author;
+
+    @QFElement("likes")
+    private int likes;
+
+    @QFDate
+    @QFElement("createDate")
+    private LocalDateTime createDate;
+
+    @QFElement("published")
+    @QFBlockParsing  // Only allow exact value match
+    private boolean published;
+}
+```
+
+### Step 3: Use in Your Controller
+
+Inject the filter into your REST controller endpoint:
+
+```java
+@RestController
+@RequestMapping("/posts")
+public class PostController {
+
+    @Autowired
+    private PostBlogRepository repository;
+
+    @GetMapping
+    public Page<PostBlog> getPosts(
+        @QFParam(PostFilterDef.class) 
+        @RequestParam(required = false, defaultValue = "", name = "filter") 
+        QueryFilter<PostBlog> filter,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "10") int size
+    ) {
+        Pageable pageable = PageRequest.of(page, size);
+        return repository.findAll(filter, pageable);
+    }
+}
+```
+
+</Steps>
+
+## Common Filter Patterns
+
+Once your filter is set up, you can use various operations to query your data:
+
+### Equality Filters
+
+```bash
+# Find posts by exact author name
+GET /posts?filter=author=eq:John
+
+# Find posts with exactly 100 likes
+GET /posts?filter=likes=eq:100
+```
+
+### Comparison Filters
+
+```bash
+# Find posts with more than 50 likes
+GET /posts?filter=likes=gt:50
+
+# Find posts with 50 or fewer likes
+GET /posts?filter=likes=lte:50
+
+# Greater than or equal
+GET /posts?filter=likes=gte:100
+
+# Less than
+GET /posts?filter=likes=lt:50
+```
+
+### Pattern Matching
+
+```bash
+# Find authors starting with "Jo"
+GET /posts?filter=author=starts:Jo
+
+# Find authors ending with "son"
+GET /posts?filter=author=ends:son
+
+# Find authors containing "doe"
+GET /posts?filter=author=like:doe
+```
+
+### Multiple Values (IN)
+
+```bash
+# Find posts by multiple authors
+GET /posts?filter=author=in:John,Jane,Bob
+
+# Find posts with specific like counts
+GET /posts?filter=likes=in:10,20,30,40
+```
+
+### Negation
+
+```bash
+# Find posts NOT by John
+GET /posts?filter=author=ne:John
+
+# Find posts NOT in list
+GET /posts?filter=author=nin:John,Jane
+```
+
+### Combining Multiple Filters
+
+```bash
+# Combine multiple conditions (AND logic by default)
+GET /posts?filter=author=eq:John&likes=gt:50&published=eq:true
+
+# With spaces (URL encoded)
+GET /posts?filter=author=eq:John%20Doe&likes=gte:100
+```
+
+### Date Filters
+
+For fields annotated with `@QFDate`:
+
+```bash
+# Posts created after a specific date
+GET /posts?filter=createDate=gt:2024-01-01T00:00:00
+
+# Posts created in a date range
+GET /posts?filter=createDate=gte:2024-01-01T00:00:00&createDate=lt:2024-12-31T23:59:59
+```
+
+### Boolean Filters with @QFBlockParsing
+
+<Note>
+When using `@QFBlockParsing` on boolean fields, you can only use exact equality (`eq`) operation.
+</Note>
+
+```bash
+# Find only published posts
+GET /posts?filter=published=eq:true
+
+# Find unpublished posts
+GET /posts?filter=published=eq:false
+```
+
+## Filtering Related Entities
+
+You can filter by properties of related entities using dot notation:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    // Filter by post's author
+    @QFElement("author")
+    private String author;
+    
+    // Filter by comment's author (related entity)
+    @QFElement("comments.author")
+    private String commentAuthor;
+    
+    // Filter by comment's likes
+    @QFElement("comments.likes")
+    private int commentLikes;
+}
+```
+
+Usage:
+
+```bash
+# Find posts where any comment author is "Jane"
+GET /posts?filter=commentAuthor=eq:Jane
+
+# Find posts with comments having more than 10 likes
+GET /posts?filter=commentLikes=gt:10
+```
+
+## Error Handling
+
+### Common Errors and Solutions
+
+<Warning>
+Always validate filter input and handle exceptions gracefully to provide clear error messages to API consumers.
+</Warning>
+
+#### Invalid Filter Field
+
+```java
+@RestControllerAdvice
+public class QueryFilterExceptionHandler {
+    
+    @ExceptionHandler(QueryFilterException.class)
+    public ResponseEntity<ErrorResponse> handleQueryFilterException(
+        QueryFilterException ex
+    ) {
+        ErrorResponse error = new ErrorResponse(
+            "Invalid filter",
+            ex.getMessage()
+        );
+        return ResponseEntity.badRequest().body(error);
+    }
+    
+    @ExceptionHandler(QFNotValuable.class)
+    public ResponseEntity<ErrorResponse> handleNotValuable(
+        QFNotValuable ex
+    ) {
+        ErrorResponse error = new ErrorResponse(
+            "Invalid filter value",
+            "The provided value is not valid for this field"
+        );
+        return ResponseEntity.badRequest().body(error);
+    }
+}
+```
+
+#### Validation Example
+
+```java
+@GetMapping
+public Page<PostBlog> getPosts(
+    @QFParam(PostFilterDef.class) 
+    @RequestParam(required = false, defaultValue = "") 
+    QueryFilter<PostBlog> filter,
+    Pageable pageable
+) {
+    try {
+        return repository.findAll(filter, pageable);
+    } catch (QueryFilterException e) {
+        throw new ResponseStatusException(
+            HttpStatus.BAD_REQUEST, 
+            "Invalid filter: " + e.getMessage()
+        );
+    }
+}
+```
+
+## Programmatic Filtering
+
+You can also build filters programmatically:
+
+```java
+@Service
+public class PostService {
+    
+    @Autowired
+    private QFProcessor<PostFilterDef, PostBlog> processor;
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    public List<PostBlog> findPopularPosts(int minLikes) {
+        // Create filter programmatically
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            "likes=gte:" + minLikes,
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+    
+    public List<PostBlog> findByAuthorAndLikes(String author, int minLikes) {
+        // Build complex filter
+        String filterStr = String.format(
+            "author=eq:%s&likes=gte:%d",
+            author, minLikes
+        );
+        
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            filterStr,
+            QFParamType.RHS_COLON
+        );
+        
+        return repository.findAll(filter);
+    }
+}
+```
+
+## Available Operations
+
+| Operation | Syntax | Description | Example |
+|-----------|--------|-------------|----------|
+| Equal | `eq` | Exact match | `author=eq:John` |
+| Not Equal | `ne` | Not equal | `author=ne:John` |
+| Greater Than | `gt` | Greater than | `likes=gt:50` |
+| Greater or Equal | `gte` | Greater than or equal | `likes=gte:50` |
+| Less Than | `lt` | Less than | `likes=lt:100` |
+| Less or Equal | `lte` | Less than or equal | `likes=lte:100` |
+| In | `in` | Value in list | `author=in:John,Jane` |
+| Not In | `nin` | Value not in list | `author=nin:John,Jane` |
+| Like | `like` | Contains text | `author=like:Doe` |
+| Starts With | `starts` | Starts with text | `author=starts:Jo` |
+| Ends With | `ends` | Ends with text | `author=ends:son` |
+
+<Note>
+Not all operations are available for all field types. For example, `like`, `starts`, and `ends` only work with String fields.
+</Note>
+
+## Next Steps
+
+- Learn about [QFParam vs QFMultiParam](/guides/qfparam-vs-qfmultiparam) for different parameter styles
+- Explore [Sorting](/guides/sorting) to order your filtered results
+- Use [Custom Predicates](/guides/custom-predicates) for complex filtering logic

@@ -1,122 +1,116 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "QueryFilterJPA",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#94cb04",
+    "light": "#545454",
+    "dark": "#94cb04"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/favicon.png",
+  "logo": {
+    "light": "/logo.png",
+    "dark": "/logo.png"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/acoboh/query-filter-jpa"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/acoboh/query-filter-jpa"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/filter-definitions",
+              "concepts/query-syntax",
+              "concepts/operations"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/basic-filtering",
+              "guides/qfparam-vs-qfmultiparam",
+              "guides/sorting",
+              "guides/custom-predicates",
+              "guides/spel-expressions",
+              "guides/postgresql-arrays",
+              "guides/json-filtering"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "OpenAPI Integration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "openapi/overview",
+              "openapi/swagger-ui"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/discriminators",
+              "advanced/collections",
+              "advanced/subqueries",
+              "advanced/custom-converters"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Annotations",
             "pages": [
-              "api-reference/introduction"
+              "api/annotations/enable-query-filter",
+              "api/annotations/qf-definition-class",
+              "api/annotations/qf-element",
+              "api/annotations/qf-param",
+              "api/annotations/qf-multi-param",
+              "api/annotations/qf-date",
+              "api/annotations/qf-json-element",
+              "api/annotations/qf-collection-element",
+              "api/annotations/qf-discriminator",
+              "api/annotations/qf-sortable",
+              "api/annotations/qf-predicate"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Core Classes",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/query-filter",
+              "api/qf-param-type",
+              "api/operations"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/spring-boot-3",
+              "examples/spring-boot-4",
+              "examples/common-patterns"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

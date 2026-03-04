@@ -1,0 +1,492 @@
+---
+title: QueryFilter
+description: Core filter class that implements JPA Specification for dynamic query building
+---
+
+## Overview
+
+`QueryFilter<E>` is the main class of QueryFilterJPA that implements Spring Data JPA's `Specification<E>` interface. It allows you to create dynamic filters from query parameters using either RHS_COLON or LHS_BRACKETS syntax.
+
+### Type Parameters
+
+- `E` - The entity model class being filtered
+
+### Implements
+
+- `org.springframework.data.jpa.domain.Specification<E>`
+- `java.io.Serializable`
+
+## Constructor
+
+`QueryFilter` is typically created through factory methods in the processor, not directly instantiated.
+
+```java
+protected QueryFilter(String input, QFParamType type, QFProcessor<?, E> processor)
+protected QueryFilter(Map<String, String[]> input, boolean ignoreUnknow, QFParamType type, QFProcessor<?, E> processor)
+```
+
+## Core Methods
+
+### Getting Information
+
+#### getInitialInput()
+
+Get the original filter input string used in construction.
+
+```java
+public String getInitialInput()
+```
+
+**Returns:** Original input string
+
+**Example:**
+```java
+QueryFilter<User> filter = processor.newQueryFilter("name=eq:John", QFParamType.RHS_COLON);
+String input = filter.getInitialInput(); // "name=eq:John"
+```
+
+#### getEntityClass()
+
+Get the entity class being filtered.
+
+```java
+public Class<E> getEntityClass()
+```
+
+**Returns:** Entity model class
+
+#### getPredicateClass()
+
+Get the filter definition class.
+
+```java
+public Class<?> getPredicateClass()
+```
+
+**Returns:** Predicate definition class
+
+## Field Operations
+
+### Adding Fields
+
+#### addNewField() - Element Fields
+
+Manually add a new filter operation on element fields.
+
+```java
+public void addNewField(String field, QFOperationEnum operation, List<String> values)
+public void addNewField(String field, QFOperationEnum operation, String value)
+```
+
+**Parameters:**
+- `field` - Field name from filter definition
+- `operation` - Operation to apply (EQUAL, GREATER_THAN, etc.)
+- `values` / `value` - Filter values (comma-separated for string version)
+
+**Throws:**
+- `QFFieldNotFoundException` - Field not found in definition
+- `QFNotValuable` - Field is not a valuable element field
+
+**Example:**
+```java
+filter.addNewField("age", QFOperationEnum.GREATER_THAN, "18");
+filter.addNewField("status", QFOperationEnum.IN, Arrays.asList("ACTIVE", "PENDING"));
+```
+
+#### addNewField() - Discriminator Fields
+
+Add filter operation on discriminator fields (inheritance).
+
+```java
+public void addNewField(String field, QFOperationDiscriminatorEnum operation, List<String> classes)
+```
+
+**Parameters:**
+- `field` - Discriminator field name
+- `operation` - Discriminator operation (EQUAL, IN, etc.)
+- `classes` - List of discriminator class names
+
+**Example:**
+```java
+filter.addNewField("type", QFOperationDiscriminatorEnum.IN, Arrays.asList("Premium", "Basic"));
+```
+
+#### addNewField() - JSON Fields
+
+Add filter operation on JSON fields.
+
+```java
+public void addNewField(String field, QFOperationJsonEnum operation, String value)
+```
+
+**Parameters:**
+- `field` - JSON field name
+- `operation` - JSON operation (EQUAL, LIKE, etc.)
+- `value` - JSON value as string
+
+**Example:**
+```java
+filter.addNewField("metadata", QFOperationJsonEnum.EQUAL, "{\"key\":\"value\"}");
+```
+
+#### addNewField() - Collection Fields
+
+Add filter operation on collection size.
+
+```java
+public void addNewField(String field, QFCollectionOperationEnum operation, int value)
+```
+
+**Parameters:**
+- `field` - Collection field name
+- `operation` - Collection operation (EQUAL, GREATER_THAN, etc.)
+- `value` - Integer value to compare collection size
+
+**Example:**
+```java
+filter.addNewField("tags", QFCollectionOperationEnum.GREATER_THAN, 3);
+```
+
+### Overriding Fields
+
+Override existing field values or add new ones if not present.
+
+```java
+public void overrideField(String field, QFOperationEnum operation, String value)
+public void overrideField(String field, QFOperationDiscriminatorEnum operation, String value)
+public void overrideField(String field, QFOperationJsonEnum operation, String value)
+public void overrideField(String field, QFCollectionOperationEnum operation, int value)
+```
+
+**Example:**
+```java
+filter.overrideField("status", QFOperationEnum.EQUAL, "ACTIVE");
+```
+
+### Deleting Fields
+
+#### deleteField()
+
+Remove a field from the filter.
+
+```java
+public void deleteField(String field)
+```
+
+**Throws:** `QFFieldNotFoundException`
+
+**Example:**
+```java
+filter.deleteField("status");
+```
+
+### Checking Fields
+
+#### isFiltering()
+
+Check if a specific field is currently being filtered.
+
+```java
+public boolean isFiltering(String field)
+```
+
+**Returns:** `true` if field is present in filter
+
+**Example:**
+```java
+if (filter.isFiltering("name")) {
+    // Handle name filtering
+}
+```
+
+#### isFilteringAny()
+
+Check if any of the specified fields are being filtered.
+
+```java
+public boolean isFilteringAny(String... fields)
+```
+
+**Example:**
+```java
+if (filter.isFilteringAny("email", "username")) {
+    // At least one is being filtered
+}
+```
+
+### Getting Field Values
+
+#### getActualValue()
+
+Get the current values of an element or discriminator field.
+
+```java
+public List<String> getActualValue(String field)
+```
+
+**Returns:** List of values or `null` if not present
+
+**Throws:** `QFFieldNotFoundException`, `QFFieldNotSupported`
+
+**Example:**
+```java
+List<String> statuses = filter.getActualValue("status");
+```
+
+#### getActualJsonValue()
+
+Get the current value of a JSON field.
+
+```java
+public Map<String, String> getActualJsonValue(String field)
+```
+
+**Returns:** Map of JSON key-value pairs or `null`
+
+#### getActualCollectionValue()
+
+Get the current value of a collection field filter.
+
+```java
+public Integer getActualCollectionValue(String field)
+```
+
+**Returns:** Integer value or `null`
+
+### Getting Operations and Values
+
+#### getFirstActualElementOperation()
+
+Get the first operation and values for an element field.
+
+```java
+public Pair<QFOperationEnum, List<String>> getFirstActualElementOperation(String field)
+```
+
+**Returns:** Pair of operation and values, or `null` if not present
+
+**Example:**
+```java
+Pair<QFOperationEnum, List<String>> opValues = filter.getFirstActualElementOperation("age");
+if (opValues != null) {
+    QFOperationEnum op = opValues.getFirst(); // e.g., GREATER_THAN
+    List<String> values = opValues.getSecond(); // e.g., ["18"]
+}
+```
+
+#### getActualElementOperation()
+
+Get all operations and values for an element field.
+
+```java
+public List<Pair<QFOperationEnum, List<String>>> getActualElementOperation(String field)
+```
+
+**Similar methods exist for:**
+- `getFirstActualJsonOperation()` / `getActualJsonOperation()`
+- `getFirstActualDiscriminatorOperation()` / `getActualDiscriminatorOperation()`
+- `getFirstActualCollectionOperation()` / `getActualCollectionOperation()`
+
+#### getAllFieldValues()
+
+Get information about all filtered fields.
+
+```java
+public List<QFFieldInfo> getAllFieldValues()
+```
+
+**Returns:** List of field information objects
+
+## Sorting Operations
+
+### Adding Sort
+
+#### addSortBy()
+
+Add a sort criterion.
+
+```java
+public void addSortBy(String field, Direction direction)
+```
+
+**Parameters:**
+- `field` - Field name to sort by
+- `direction` - `Direction.ASC` or `Direction.DESC`
+
+**Throws:**
+- `QFFieldNotFoundException` - Field not found
+- `QFNotSortableException` - Field is not sortable
+- `QFMultipleSortException` - Field already in sort list
+
+**Example:**
+```java
+filter.addSortBy("createdAt", Direction.DESC);
+filter.addSortBy("name", Direction.ASC);
+```
+
+### Removing Sort
+
+#### deleteSortBy()
+
+Remove a specific field from sorting.
+
+```java
+public void deleteSortBy(String field)
+```
+
+#### clearSort()
+
+Remove all sort criteria.
+
+```java
+public void clearSort()
+```
+
+#### setDefaultSortEnabled()
+
+Restore default sorting configuration.
+
+```java
+public void setDefaultSortEnabled()
+```
+
+### Checking Sort
+
+#### isSorted()
+
+Check if any sorting is applied.
+
+```java
+public boolean isSorted()
+```
+
+#### isSortedBy()
+
+Check if sorting by a specific field.
+
+```java
+public boolean isSortedBy(String field)
+```
+
+#### isSortedByAny()
+
+Check if sorting by any of the specified fields.
+
+```java
+public boolean isSortedByAny(String... fields)
+```
+
+### Getting Sort Information
+
+#### getSortFields()
+
+Get all sort fields with their directions.
+
+```java
+public List<Pair<String, Direction>> getSortFields()
+```
+
+**Returns:** List of field name and direction pairs
+
+**Example:**
+```java
+List<Pair<String, Direction>> sorts = filter.getSortFields();
+for (Pair<String, Direction> sort : sorts) {
+    System.out.println(sort.getFirst() + ": " + sort.getSecond());
+}
+```
+
+#### getSortFieldWithFullPath()
+
+Get sort fields with full JPA path (useful for nested properties).
+
+```java
+public List<Pair<String, Direction>> getSortFieldWithFullPath()
+```
+
+#### getOrderAsCriteriaBuilder()
+
+Get sort orders as JPA Criteria API Order objects.
+
+```java
+public List<Order> getOrderAsCriteriaBuilder(Root<E> root, CriteriaBuilder criteriaBuilder)
+```
+
+## Predicate Operations
+
+### setPredicate()
+
+Set a custom predicate to combine filter conditions.
+
+```java
+public void setPredicate(String predicateName)
+```
+
+**Throws:**
+- `UnsupportedOperationException` - No predicates defined
+- `IllegalStateException` - Predicate not found
+
+### clearPredicate()
+
+Remove the current predicate.
+
+```java
+public void clearPredicate()
+```
+
+### getPredicateName()
+
+Get the current predicate name.
+
+```java
+public String getPredicateName()
+```
+
+**Returns:** Predicate name or `null`
+
+## Specification Implementation
+
+### toPredicate()
+
+Converts the filter to a JPA Predicate (called automatically by Spring Data JPA).
+
+```java
+public Predicate toPredicate(Root<E> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder)
+```
+
+**This method is called internally by Spring Data JPA when executing queries.**
+
+## Usage Example
+
+```java
+// Create filter from query string
+QueryFilter<User> filter = processor.newQueryFilter(
+    "name=like:John&age=gt:18&sort=-createdAt",
+    QFParamType.RHS_COLON
+);
+
+// Programmatically add filters
+filter.addNewField("status", QFOperationEnum.EQUAL, "ACTIVE");
+
+// Check what's being filtered
+if (filter.isFiltering("name")) {
+    List<String> names = filter.getActualValue("name");
+    System.out.println("Filtering by name: " + names);
+}
+
+// Modify sorting
+filter.addSortBy("lastName", Direction.ASC);
+
+// Use with Spring Data JPA repository
+List<User> users = userRepository.findAll(filter);
+
+// Or with pagination
+Pageable pageable = PageRequest.of(0, 20);
+Page<User> page = userRepository.findAll(filter, pageable);
+```
+
+## See Also
+
+- [QFParamType](/api/qf-param-type) - Filter parameter syntax types
+- [Operations](/api/operations) - Available filter operations
+- [Filter Definitions](/concepts/filter-definitions) - Defining filterable fields

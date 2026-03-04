@@ -1,0 +1,615 @@
+---
+title: Custom Predicates
+description: Create complex filtering logic using custom predicates with @QFPredicate annotation
+---
+
+## Overview
+
+Custom predicates allow you to define complex filtering logic that combines multiple fields using custom boolean expressions. Instead of the default AND logic between filters, you can create OR combinations, mixed logic, and control which fields are included in queries.
+
+## What are Custom Predicates?
+
+By default, QueryFilterJPA combines all filters using AND logic:
+
+```bash
+# Default behavior: author="John" AND likes > 50 AND published = true
+GET /posts?author=eq:John&likes=gt:50&published=eq:true
+```
+
+Custom predicates let you override this behavior and define your own logic:
+
+```bash
+# Custom predicate: author="John" OR commentAuthor="John"
+GET /posts?author=eq:John&commentAuthor=eq:John&predicate=or-authors
+```
+
+## Creating Custom Predicates
+
+### Basic Predicate Definition
+
+Use the `@QFPredicate` annotation at the class level:
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+@QFPredicate(
+    name = "or-likes",
+    expression = "likes OR commentLikes"
+)
+public class PostFilterDef {
+    
+    @QFElement("likes")
+    private int likes;
+    
+    @QFElement("comments.likes")
+    private int commentLikes;
+}
+```
+
+### Predicate Components
+
+| Component | Description | Required |
+|-----------|-------------|----------|
+| `name` | Unique identifier for the predicate | Yes |
+| `expression` | Boolean expression combining fields | Yes |
+| `includeMissing` | Include fields not in expression | No (default: false) |
+
+## Predicate Expressions
+
+### OR Logic
+
+Combine fields with OR:
+
+```java
+@QFPredicate(
+    name = "or-likes",
+    expression = "likes OR commentLikes"
+)
+```
+
+This means: match if EITHER the post likes OR comment likes match the criteria.
+
+```bash
+# Find posts where post has 100 likes OR comments have 300 likes
+GET /posts?likes=eq:100&commentLikes=eq:300&predicate=or-likes
+```
+
+### AND Logic
+
+Combine fields with AND:
+
+```java
+@QFPredicate(
+    name = "and-likes",
+    expression = "likes AND commentLikes"
+)
+```
+
+This means: match ONLY if BOTH post likes AND comment likes match.
+
+```bash
+# Find posts where post has 100 likes AND comments have 300 likes
+GET /posts?likes=eq:100&commentLikes=eq:300&predicate=and-likes
+```
+
+### Complex Expressions
+
+Combine multiple fields with mixed logic:
+
+```java
+@QFPredicate(
+    name = "complex",
+    expression = "(author OR commentAuthor) AND published"
+)
+```
+
+<Note>
+Currently, predicate expressions support `AND` and `OR` operators. Parentheses are not supported for grouping in the expression syntax, but you can achieve complex logic by combining predicates strategically.
+</Note>
+
+## Complete Example
+
+### Filter Definition
+
+```java
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+@QFPredicate(
+    name = "or-likes",
+    expression = "likes OR commentLikes"
+)
+@QFPredicate(
+    name = "and-likes",
+    expression = "likes AND commentLikes"
+)
+@QFPredicate(
+    name = "or-authors",
+    expression = "author OR commentAuthor",
+    includeMissing = true
+)
+@QFPredicate(
+    name = "or-only-authors",
+    expression = "author OR commentAuthor",
+    includeMissing = false
+)
+public class PostFilterDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    @QFElement("comments.author")
+    private String commentAuthor;
+    
+    @QFElement("comments.likes")
+    private int commentLikes;
+    
+    @QFElement("postType")
+    private String postType;
+}
+```
+
+### Using Predicates Programmatically
+
+```java
+@Service
+public class PostService {
+    
+    @Autowired
+    private QFProcessor<PostFilterDef, PostBlog> processor;
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    public List<PostBlog> findPopularByLikes() {
+        // Create filter
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            "likes=eq:100&commentLikes=eq:300",
+            QFParamType.RHS_COLON
+        );
+        
+        // Apply OR predicate
+        filter.setPredicate("or-likes");
+        
+        // Now returns posts where likes=100 OR commentLikes=300
+        return repository.findAll(filter);
+    }
+    
+    public List<PostBlog> findByAuthor(String author) {
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            "author=eq:" + author + "&commentAuthor=eq:" + author,
+            QFParamType.RHS_COLON
+        );
+        
+        // Find posts by author OR where they commented
+        filter.setPredicate("or-authors");
+        
+        return repository.findAll(filter);
+    }
+}
+```
+
+### Controller Usage
+
+While predicates are typically set programmatically, you can expose them via custom endpoints:
+
+```java
+@RestController
+@RequestMapping("/posts")
+public class PostController {
+    
+    @Autowired
+    private QFProcessor<PostFilterDef, PostBlog> processor;
+    
+    @Autowired
+    private PostBlogRepository repository;
+    
+    @GetMapping("/or-search")
+    public List<PostDTO> searchWithOr(
+        @QFMultiParam(PostFilterDef.class) QueryFilter<PostBlog> filter
+    ) {
+        // Apply OR predicate for this endpoint
+        filter.setPredicate("or-authors");
+        
+        return repository.findAll(filter)
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+    
+    @GetMapping("/and-search")
+    public List<PostDTO> searchWithAnd(
+        @QFMultiParam(PostFilterDef.class) QueryFilter<PostBlog> filter
+    ) {
+        // Apply AND predicate for this endpoint
+        filter.setPredicate("and-likes");
+        
+        return repository.findAll(filter)
+            .stream()
+            .map(this::toDTO)
+            .collect(Collectors.toList());
+    }
+}
+```
+
+## includeMissing Parameter
+
+The `includeMissing` parameter controls whether fields NOT mentioned in the expression are still applied:
+
+### includeMissing = false (default)
+
+Only fields in the expression are used:
+
+```java
+@QFPredicate(
+    name = "or-only-authors",
+    expression = "author OR commentAuthor",
+    includeMissing = false  // Only use author and commentAuthor
+)
+```
+
+```java
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "author=eq:John&commentAuthor=eq:John&postType=eq:VIDEO&likes=gte:100",
+    QFParamType.RHS_COLON
+);
+
+filter.setPredicate("or-only-authors");
+// Result: (author=John OR commentAuthor=John)
+// postType and likes are IGNORED
+```
+
+### includeMissing = true
+
+Fields not in expression are added with AND:
+
+```java
+@QFPredicate(
+    name = "or-authors",
+    expression = "author OR commentAuthor",
+    includeMissing = true  // Include other fields with AND
+)
+```
+
+```java
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "author=eq:John&commentAuthor=eq:John&postType=eq:VIDEO&likes=gte:100",
+    QFParamType.RHS_COLON
+);
+
+filter.setPredicate("or-authors");
+// Result: (author=John OR commentAuthor=John) AND postType=VIDEO AND likes>=100
+// Additional fields are INCLUDED with AND logic
+```
+
+## Use Cases
+
+### Use Case 1: Search Across Multiple Fields
+
+**Scenario:** Find posts where a user is either the author OR commented.
+
+```java
+@QFPredicate(
+    name = "user-involvement",
+    expression = "author OR commentAuthor"
+)
+public class PostFilterDef {
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("comments.author")
+    private String commentAuthor;
+}
+```
+
+```java
+// Find all posts where John is involved
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "author=eq:John&commentAuthor=eq:John",
+    QFParamType.RHS_COLON
+);
+filter.setPredicate("user-involvement");
+List<PostBlog> posts = repository.findAll(filter);
+```
+
+### Use Case 2: Flexible Popularity Filter
+
+**Scenario:** Consider a post popular if it OR its comments have many likes.
+
+```java
+@QFPredicate(
+    name = "popular",
+    expression = "likes OR commentLikes",
+    includeMissing = true  // Still filter by other criteria
+)
+public class PostFilterDef {
+    @QFElement("likes")
+    private int likes;
+    
+    @QFElement("comments.likes")
+    private int commentLikes;
+    
+    @QFElement("published")
+    private boolean published;
+}
+```
+
+```java
+// Find published posts that are popular (post or comment likes > 100)
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "likes=gt:100&commentLikes=gt:100&published=eq:true",
+    QFParamType.RHS_COLON
+);
+filter.setPredicate("popular");
+// Result: (likes>100 OR commentLikes>100) AND published=true
+```
+
+### Use Case 3: Content Moderation
+
+**Scenario:** Flag content if BOTH post and comments meet criteria.
+
+```java
+@QFPredicate(
+    name = "needs-review",
+    expression = "reported AND commentReported"
+)
+public class ModerationFilterDef {
+    @QFElement("reported")
+    private boolean reported;
+    
+    @QFElement("comments.reported")
+    private boolean commentReported;
+}
+```
+
+```java
+// Find posts where both post AND comments are reported
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "reported=eq:true&commentReported=eq:true",
+    QFParamType.RHS_COLON
+);
+filter.setPredicate("needs-review");
+```
+
+## Predicate Management
+
+### Setting Predicates
+
+```java
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "author=eq:John&commentAuthor=eq:Jane",
+    QFParamType.RHS_COLON
+);
+
+// Set predicate
+filter.setPredicate("or-authors");
+
+// Verify predicate is set
+String predicateName = filter.getPredicateName();
+assertThat(predicateName).isEqualTo("or-authors");
+```
+
+### Switching Predicates
+
+```java
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "likes=eq:100&commentLikes=eq:300",
+    QFParamType.RHS_COLON
+);
+
+// Start with OR logic
+filter.setPredicate("or-likes");
+List<PostBlog> orResults = repository.findAll(filter);
+
+// Switch to AND logic
+filter.setPredicate("and-likes");
+List<PostBlog> andResults = repository.findAll(filter);
+
+// orResults will have MORE items (inclusive)
+// andResults will have FEWER items (restrictive)
+```
+
+### Removing Predicates
+
+```java
+// Reset to default AND behavior
+filter.setPredicate(null);
+
+// Or use default predicate if defined
+filter.setDefaultPredicate();
+```
+
+## Advanced Patterns
+
+### Dynamic Predicate Selection
+
+```java
+@Service
+public class PostSearchService {
+    
+    public List<PostBlog> search(String query, SearchMode mode) {
+        QueryFilter<PostBlog> filter = processor.newQueryFilter(
+            query,
+            QFParamType.RHS_COLON
+        );
+        
+        // Select predicate based on search mode
+        switch (mode) {
+            case BROAD:
+                filter.setPredicate("or-authors");
+                break;
+            case STRICT:
+                filter.setPredicate("and-likes");
+                break;
+            case NORMAL:
+            default:
+                // Use default AND logic
+                break;
+        }
+        
+        return repository.findAll(filter);
+    }
+}
+```
+
+### Combining with Programmatic Filters
+
+```java
+public List<PostBlog> findPopularByCategory(String category) {
+    // Start with base filter
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        "",
+        QFParamType.RHS_COLON
+    );
+    
+    // Add fields programmatically
+    filter.addNewField("likes", QFOperationEnum.GREATER_THAN, "100");
+    filter.addNewField("commentLikes", QFOperationEnum.GREATER_THAN, "100");
+    filter.addNewField("category", QFOperationEnum.EQUAL, category);
+    
+    // Apply OR predicate for likes
+    filter.setPredicate("or-likes");
+    // Result: (likes>100 OR commentLikes>100) AND category=category
+    
+    return repository.findAll(filter);
+}
+```
+
+## Best Practices
+
+<Steps>
+
+### Use Descriptive Names
+
+```java
+// Good: Clear intent
+@QFPredicate(name = "author-or-commenter", expression = "author OR commentAuthor")
+@QFPredicate(name = "popular-content", expression = "likes OR commentLikes")
+
+// Bad: Unclear
+@QFPredicate(name = "pred1", expression = "author OR commentAuthor")
+@QFPredicate(name = "or", expression = "likes OR commentLikes")
+```
+
+### Define Constants for Predicate Names
+
+```java
+@QFDefinitionClass(PostBlog.class)
+@QFPredicate(name = PostFilterDef.OR_LIKES, expression = "likes OR commentLikes")
+@QFPredicate(name = PostFilterDef.AND_LIKES, expression = "likes AND commentLikes")
+public class PostFilterDef {
+    
+    public static final String OR_LIKES = "or-likes";
+    public static final String AND_LIKES = "and-likes";
+    
+    // Fields...
+}
+```
+
+Usage:
+
+```java
+filter.setPredicate(PostFilterDef.OR_LIKES);  // Type-safe, refactorable
+```
+
+### Document Predicate Behavior
+
+```java
+/**
+ * Post filter definition with custom predicates.
+ * 
+ * Available predicates:
+ * - or-likes: Matches if post OR comments have the specified likes
+ * - and-likes: Matches only if BOTH post AND comments have specified likes
+ * - or-authors: Matches if author OR commenter matches (includes other filters)
+ * - or-only-authors: Matches if author OR commenter matches (ignores other filters)
+ */
+@QFDefinitionClass(PostBlog.class)
+@QFPredicate(name = "or-likes", expression = "likes OR commentLikes")
+// ... more predicates
+public class PostFilterDef {
+    // ...
+}
+```
+
+### Test Predicate Logic
+
+```java
+@Test
+void testOrLikesPredicate() {
+    // Setup test data
+    PostBlog post1 = createPost(likes: 100, commentLikes: 50);
+    PostBlog post2 = createPost(likes: 50, commentLikes: 300);
+    PostBlog post3 = createPost(likes: 200, commentLikes: 250);
+    
+    // Create filter
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        "likes=eq:100&commentLikes=eq:300",
+        QFParamType.RHS_COLON
+    );
+    
+    // Without predicate (AND logic) - no matches
+    List<PostBlog> andResults = repository.findAll(filter);
+    assertThat(andResults).isEmpty();
+    
+    // With OR predicate - 2 matches
+    filter.setPredicate("or-likes");
+    List<PostBlog> orResults = repository.findAll(filter);
+    assertThat(orResults).hasSize(2)
+        .containsExactlyInAnyOrder(post1, post2);
+}
+```
+
+</Steps>
+
+## Limitations
+
+<Warning>
+- Predicate expressions currently support `AND` and `OR` operators
+- Parentheses for complex grouping are not supported in expressions
+- All fields in the expression must be defined in the filter definition
+- Predicate names must be unique within a filter definition
+</Warning>
+
+## Common Pitfalls
+
+### Forgetting to Set the Predicate
+
+```java
+// Wrong: Filter created but predicate not set
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "author=eq:John&commentAuthor=eq:John",
+    QFParamType.RHS_COLON
+);
+List<PostBlog> results = repository.findAll(filter);
+// Uses default AND logic, not OR!
+
+// Correct: Set the predicate
+filter.setPredicate("or-authors");
+List<PostBlog> results = repository.findAll(filter);
+// Now uses OR logic as intended
+```
+
+### Misunderstanding includeMissing
+
+```java
+// With includeMissing = false
+filter.setPredicate("or-only-authors");
+// Only author and commentAuthor are used
+// Other fields like 'published' are IGNORED
+
+// With includeMissing = true
+filter.setPredicate("or-authors");
+// author OR commentAuthor, AND other fields are included
+// published=true will still be applied
+```
+
+## Next Steps
+
+- Learn about [SpEL Expressions](/guides/spel-expressions) for dynamic filtering
+- Explore [Sorting](/guides/sorting) to order predicate results
+- Check [Basic Filtering](/guides/basic-filtering) for standard operations

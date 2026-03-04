@@ -1,0 +1,238 @@
+---
+title: Installation
+description: Add QueryFilterJPA to your Spring Boot project with Maven or Gradle
+---
+
+## Choose Your Spring Boot Version
+
+QueryFilterJPA provides dedicated artifacts for **Spring Boot 3** and **Spring Boot 4**. Make sure to use the correct version for your project.
+
+<Note>
+The latest version is **2.0.0**. All artifacts follow the same version numbering but have different artifact IDs based on the Spring Boot version.
+</Note>
+
+## Maven Installation
+
+### Core Dependency
+
+Add the appropriate dependency to your `pom.xml` based on your Spring Boot version:
+
+<CodeGroup>
+
+```xml Spring Boot 4
+<dependency>
+    <groupId>io.github.acoboh</groupId>
+    <artifactId>query-filter-jpa-4</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+
+```xml Spring Boot 3
+<dependency>
+    <groupId>io.github.acoboh</groupId>
+    <artifactId>query-filter-jpa-3</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+
+</CodeGroup>
+
+### OpenAPI Integration (Optional)
+
+To automatically generate OpenAPI/Swagger documentation for your filters, add the OpenAPI dependency:
+
+<CodeGroup>
+
+```xml Spring Boot 4
+<dependency>
+    <groupId>io.github.acoboh</groupId>
+    <artifactId>query-filter-jpa-openapi-4</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+
+```xml Spring Boot 3
+<dependency>
+    <groupId>io.github.acoboh</groupId>
+    <artifactId>query-filter-jpa-openapi-3</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+
+</CodeGroup>
+
+<Tip>
+The OpenAPI integration automatically enhances your Swagger UI with detailed filter documentation, including available fields, operations, and examples.
+</Tip>
+
+## Gradle Installation
+
+If you're using Gradle, add the dependency to your `build.gradle`:
+
+<CodeGroup>
+
+```groovy Spring Boot 4 (Groovy)
+dependencies {
+    implementation 'io.github.acoboh:query-filter-jpa-4:2.0.0'
+    
+    // Optional: OpenAPI integration
+    implementation 'io.github.acoboh:query-filter-jpa-openapi-4:2.0.0'
+}
+```
+
+```groovy Spring Boot 3 (Groovy)
+dependencies {
+    implementation 'io.github.acoboh:query-filter-jpa-3:2.0.0'
+    
+    // Optional: OpenAPI integration
+    implementation 'io.github.acoboh:query-filter-jpa-openapi-3:2.0.0'
+}
+```
+
+```kotlin Spring Boot 4 (Kotlin DSL)
+dependencies {
+    implementation("io.github.acoboh:query-filter-jpa-4:2.0.0")
+    
+    // Optional: OpenAPI integration
+    implementation("io.github.acoboh:query-filter-jpa-openapi-4:2.0.0")
+}
+```
+
+```kotlin Spring Boot 3 (Kotlin DSL)
+dependencies {
+    implementation("io.github.acoboh:query-filter-jpa-3:2.0.0")
+    
+    // Optional: OpenAPI integration
+    implementation("io.github.acoboh:query-filter-jpa-openapi-3:2.0.0")
+}
+```
+
+</CodeGroup>
+
+## Version Compatibility
+
+QueryFilterJPA requires specific versions of Spring Boot and Java:
+
+| QueryFilterJPA Version | Spring Boot Version | Java Version | JPA Version |
+|------------------------|---------------------|--------------|-------------|
+| 2.0.0 (SB4) | Spring Boot 4.0.x | Java 17+ | Jakarta EE 11 |
+| 2.0.0 (SB3) | Spring Boot 3.x | Java 17+ | Jakarta EE 10 |
+
+<Warning>
+**Important**: Do not mix Spring Boot 3 and Spring Boot 4 artifacts. Always use the artifact matching your Spring Boot version.
+</Warning>
+
+## Additional Dependencies
+
+QueryFilterJPA has minimal external dependencies, but certain features require additional libraries:
+
+### PostgreSQL Support
+
+For PostgreSQL-specific features like array filtering and JSON operations, you need the PostgreSQL JDBC driver:
+
+```xml
+<dependency>
+    <groupId>org.postgresql</groupId>
+    <artifactId>postgresql</artifactId>
+    <version>42.7.10</version>
+</dependency>
+```
+
+And for advanced PostgreSQL types, you may also want Hypersistence Utils:
+
+```xml
+<dependency>
+    <groupId>io.hypersistence</groupId>
+    <artifactId>hypersistence-utils-hibernate-63</artifactId>
+    <version>3.15.2</version>
+</dependency>
+```
+
+### Spring Data JPA
+
+QueryFilterJPA requires Spring Data JPA to be configured in your project:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-jpa</artifactId>
+</dependency>
+```
+
+## Verification
+
+After adding the dependencies, verify the installation by running:
+
+<CodeGroup>
+
+```bash Maven
+mvn dependency:tree | grep query-filter-jpa
+```
+
+```bash Gradle
+./gradlew dependencies | grep query-filter-jpa
+```
+
+</CodeGroup>
+
+You should see the QueryFilterJPA dependencies listed in the output.
+
+## Project Structure
+
+For a typical Spring Boot project with QueryFilterJPA, your structure might look like:
+
+```
+src/main/java/
+├── com/example/demo/
+│   ├── Application.java              # @EnableQueryFilter here
+│   ├── entity/
+│   │   └── PostBlog.java             # JPA entities
+│   ├── filter/
+│   │   └── PostFilterDef.java        # Filter definitions
+│   ├── repository/
+│   │   └── PostBlogRepository.java   # JPA repositories
+│   └── controller/
+│       └── PostController.java       # REST controllers
+```
+
+<Accordion title="Common Installation Issues">
+  
+  **Issue**: `ClassNotFoundException` for Jakarta persistence classes
+  
+  **Solution**: Ensure you're using the correct artifact for your Spring Boot version. Spring Boot 3+ uses Jakarta EE (not javax).
+  
+  ---
+  
+  **Issue**: Version conflicts with Spring Boot dependencies
+  
+  **Solution**: Use Spring Boot's dependency management by importing the Spring Boot BOM:
+  
+  ```xml
+  <dependencyManagement>
+      <dependencies>
+          <dependency>
+              <groupId>org.springframework.boot</groupId>
+              <artifactId>spring-boot-dependencies</artifactId>
+              <version>4.0.3</version>
+              <type>pom</type>
+              <scope>import</scope>
+          </dependency>
+      </dependencies>
+  </dependencyManagement>
+  ```
+  
+  ---
+  
+  **Issue**: OpenAPI documentation not appearing in Swagger UI
+  
+  **Solution**: Make sure you have both the OpenAPI dependency and `springdoc-openapi-ui` in your project.
+  
+</Accordion>
+
+## Next Steps
+
+Now that QueryFilterJPA is installed, let's build your first filtered endpoint:
+
+<Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+  Create a complete working example from entity to controller in 5 minutes
+</Card>

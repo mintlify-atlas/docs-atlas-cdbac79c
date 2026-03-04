@@ -1,0 +1,488 @@
+---
+title: "Subqueries"
+description: "Use subqueries for complex filtering scenarios with the subquery flag"
+---
+
+Subqueries provide a powerful way to filter entities based on related entity properties with different semantics than standard joins. The `subquery` flag on `@QFElement` enables this functionality.
+
+## Overview
+
+When filtering on related entities, standard joins and subqueries produce different results:
+
+- **Standard Join**: Filters rows where ANY related entity matches the condition
+- **Subquery**: Filters entities where ALL related entities satisfy the condition
+
+This distinction is crucial for one-to-many and many-to-many relationships.
+
+## When to Use Subqueries
+
+Use subqueries when you need to:
+
+1. **Exclude entities that have certain relationships**: Find users who DON'T have a specific role
+2. **Filter by absence**: Find entities that lack a particular related property
+3. **Apply NOT conditions correctly**: Ensure negation applies to the entire relationship, not individual rows
+4. **Avoid cartesian products**: Prevent duplicate results from multiple joins
+
+## Basic Usage
+
+### Entity Setup
+
+Consider a user-role relationship:
+
+```java
+@Entity
+public class UserModel {
+    @Id
+    @GeneratedValue
+    private Long id;
+    
+    private String username;
+    
+    @ManyToMany
+    private List<RoleModel> roles = new ArrayList<>();
+}
+
+@Entity
+public class RoleModel {
+    @Id
+    @GeneratedValue
+    private Long id;
+    
+    private String name;
+}
+```
+
+### Filter Definition
+
+Define filters with and without subqueries to understand the difference:
+
+```java
+@QFDefinitionClass(UserModel.class)
+public class UserFilterDef {
+    
+    @QFElement("username")
+    private String username;
+    
+    // With subquery - filters users who have/don't have role
+    @QFElement(value = "roles.name", subquery = true)
+    private String role;
+    
+    // Without subquery - filters on individual role matches
+    @QFElement(value = "roles.name")
+    private String roleNotSub;
+}
+```
+
+### The Critical Difference
+
+Consider these users:
+- User1: has roles [ROLE1, ROLE2]
+- User2: has roles [ROLE3, ROLE4]
+- User3: has roles [ROLE1, ROLE3]
+- User4: has roles [ROLE2, ROLE4]
+
+#### Without Subquery (Standard Join)
+
+```java
+// Find users where at least one role is NOT "ROLE1"
+QueryFilter<UserModel> filter = processor.newQueryFilter(
+    "roleNotSub=ne:ROLE1",
+    QFParamType.RHS_COLON
+);
+List<UserModel> users = repository.findAll(filter);
+// Returns: User1, User2, User3, User4 (all users!)
+// Because each user has at least one role that isn't ROLE1
+```
+
+#### With Subquery
+
+```java
+// Find users who DON'T have role "ROLE1"
+QueryFilter<UserModel> filter = processor.newQueryFilter(
+    "role=ne:ROLE1",
+    QFParamType.RHS_COLON
+);
+List<UserModel> users = repository.findAll(filter);
+// Returns: User2, User4 (users without ROLE1)
+// Correctly excludes User1 and User3 who have ROLE1
+```
+
+## Configuration
+
+### Enabling Subqueries
+
+Set the `subquery` flag to `true` on `@QFElement`:
+
+```java
+@QFElement(value = "roles.name", subquery = true)
+private String role;
+```
+
+### Combining with Other Options
+
+Subqueries work with all standard `@QFElement` options:
+
+```java
+@QFElement(
+    value = "roles.name",
+    subquery = true,
+    name = "userRole",
+    joinTypes = {JoinType.LEFT},
+    allowedOperations = {
+        QFOperationEnum.EQUAL,
+        QFOperationEnum.NOT_EQUAL
+    },
+    order = 1
+)
+private String role;
+```
+
+## Supported Operations
+
+Subqueries support all standard operations, but their semantics differ:
+
+| Operation | Standard Join | Subquery |
+|-----------|--------------|----------|
+| `eq` | Any role equals value | Has a role equal to value |
+| `ne` | Any role not equals value | Doesn't have a role equal to value |
+| `in` | Any role in values | Has a role in values |
+| `nin` | Any role not in values | Doesn't have any role in values |
+| `like` | Any role matches pattern | Has a role matching pattern |
+
+### Examples
+
+```java
+// Users who HAVE role "ROLE1"
+filter = processor.newQueryFilter(
+    "role=eq:ROLE1",
+    QFParamType.RHS_COLON
+);
+// Returns: User1, User3
+
+// Users who DON'T have role "ROLE1"
+filter = processor.newQueryFilter(
+    "role=ne:ROLE1",
+    QFParamType.RHS_COLON
+);
+// Returns: User2, User4
+
+// Users who have ROLE1 or ROLE3
+filter = processor.newQueryFilter(
+    "role=in:ROLE1,ROLE3",
+    QFParamType.RHS_COLON
+);
+// Returns: User1, User2, User3
+```
+
+## How Subqueries Work
+
+### Generated SQL
+
+Without subquery (standard join):
+```sql
+SELECT DISTINCT u.*
+FROM user_model u
+INNER JOIN user_roles ur ON u.id = ur.user_id
+INNER JOIN role_model r ON ur.role_id = r.id
+WHERE r.name <> 'ROLE1'
+```
+
+With subquery:
+```sql
+SELECT u.*
+FROM user_model u
+WHERE u.id NOT IN (
+    SELECT ur.user_id
+    FROM user_roles ur
+    INNER JOIN role_model r ON ur.role_id = r.id
+    WHERE r.name = 'ROLE1'
+)
+```
+
+### JPA Criteria API
+
+QueryFilterJPA generates appropriate Criteria API subqueries:
+
+```java
+// Simplified internal logic
+Subquery<Long> subquery = criteriaQuery.subquery(Long.class);
+Root<UserModel> subRoot = subquery.from(UserModel.class);
+Join<UserModel, RoleModel> roleJoin = subRoot.join("roles");
+
+subquery.select(subRoot.get("id"))
+    .where(criteriaBuilder.equal(
+        roleJoin.get("name"),
+        "ROLE1"
+    ));
+
+Predicate predicate = criteriaBuilder.not(
+    criteriaBuilder.in(root.get("id")).value(subquery)
+);
+```
+
+## Common Use Cases
+
+### 1. Finding Users Without a Specific Role
+
+```java
+@QFElement(value = "roles.name", subquery = true)
+private String role;
+
+// Find non-admin users
+filter = processor.newQueryFilter(
+    "role=ne:ADMIN",
+    QFParamType.RHS_COLON
+);
+```
+
+### 2. Filtering by Absence of Property
+
+```java
+@QFElement(value = "orders.status", subquery = true)
+private String orderStatus;
+
+// Customers with no pending orders
+filter = processor.newQueryFilter(
+    "orderStatus=ne:PENDING",
+    QFParamType.RHS_COLON
+);
+```
+
+### 3. Complex Exclusions
+
+```java
+@QFElement(value = "permissions.type", subquery = true)
+private String permission;
+
+// Users without dangerous permissions
+filter = processor.newQueryFilter(
+    "permission=nin:DELETE_ALL,MODIFY_SYSTEM",
+    QFParamType.RHS_COLON
+);
+```
+
+### 4. Combining Subquery with Regular Filters
+
+```java
+@QFDefinitionClass(UserModel.class)
+public class UserFilterDef {
+    
+    @QFElement("username")
+    private String username;
+    
+    @QFElement("email")
+    private String email;
+    
+    @QFElement(value = "roles.name", subquery = true)
+    private String role;
+    
+    @QFElement(value = "department.name")
+    private String department;
+}
+
+// Users in IT department without admin role
+filter = processor.newQueryFilter(
+    "department=eq:IT&role=ne:ADMIN",
+    QFParamType.RHS_COLON
+);
+
+// Active users with specific email domain who don't have guest role
+filter = processor.newQueryFilter(
+    "email=like:%@company.com&role=ne:GUEST",
+    QFParamType.RHS_COLON
+);
+```
+
+## Performance Considerations
+
+### When Subqueries Are Fast
+
+1. **Small result sets**: Subqueries that filter to a small number of IDs
+2. **Indexed relationships**: Foreign keys and join columns are properly indexed
+3. **Selective filters**: Combined with other highly selective filters
+4. **Modern databases**: Most modern databases optimize subqueries well
+
+### When to Avoid Subqueries
+
+1. **Large datasets**: Subqueries on millions of rows may be slow
+2. **Complex nested subqueries**: Multiple levels of subqueries
+3. **Unindexed columns**: Filtering on columns without indexes
+4. **Old database versions**: Some older databases handle subqueries poorly
+
+### Optimization Tips
+
+```java
+// 1. Use appropriate join types
+@QFElement(
+    value = "roles.name",
+    subquery = true,
+    joinTypes = {JoinType.INNER}  // More efficient than LEFT when appropriate
+)
+private String role;
+
+// 2. Apply more selective filters first
+@QFElement(
+    value = "username",
+    order = 1  // Applied first
+)
+private String username;
+
+@QFElement(
+    value = "roles.name",
+    subquery = true,
+    order = 2  // Applied after username filter
+)
+private String role;
+
+// 3. Limit allowed operations
+@QFElement(
+    value = "roles.name",
+    subquery = true,
+    allowedOperations = {
+        QFOperationEnum.EQUAL,
+        QFOperationEnum.NOT_EQUAL
+        // Avoid LIKE on subqueries if possible
+    }
+)
+private String role;
+```
+
+### Database-Specific Considerations
+
+#### PostgreSQL
+- Excellent subquery optimization
+- Use `EXPLAIN ANALYZE` to verify query plans
+- Consider materialized CTEs for complex subqueries
+
+#### MySQL
+- Subquery optimization improved significantly in 8.0+
+- May benefit from rewriting as joins in older versions
+- Use `EXPLAIN` to check execution strategy
+
+#### Oracle
+- Strong subquery optimization
+- Consider hints for complex scenarios
+- Semi-join optimization available
+
+## Testing Subquery Behavior
+
+Always test subquery filters with realistic data:
+
+```java
+@Test
+void testSubqueryFiltering() {
+    // Setup test data
+    UserModel user1 = new UserModel();
+    user1.setUsername("user1");
+    user1.getRoles().add(role1);  // ROLE1
+    user1.getRoles().add(role2);  // ROLE2
+    
+    UserModel user2 = new UserModel();
+    user2.setUsername("user2");
+    user2.getRoles().add(role3);  // ROLE3
+    user2.getRoles().add(role4);  // ROLE4
+    
+    repository.saveAll(List.of(user1, user2));
+    
+    // Test NOT EQUAL with subquery
+    QueryFilter<UserModel> filter = processor.newQueryFilter(
+        "role=ne:ROLE1",
+        QFParamType.RHS_COLON
+    );
+    
+    List<UserModel> results = repository.findAll(filter);
+    
+    // Should only return user2 (who doesn't have ROLE1)
+    assertThat(results)
+        .hasSize(1)
+        .containsExactly(user2);
+}
+```
+
+## Best Practices
+
+1. **Understand the semantics**: Know when you need "doesn't have" vs "has something different"
+2. **Test with realistic data**: Edge cases often reveal unexpected behavior
+3. **Monitor performance**: Use database query analysis tools
+4. **Index appropriately**: Ensure all join columns are indexed
+5. **Document usage**: Comment why subquery is needed for future maintainers
+6. **Combine wisely**: Use subqueries with other selective filters
+7. **Validate inputs**: Use `allowedOperations` to prevent expensive queries
+
+## Troubleshooting
+
+### Unexpected Results
+
+**Problem**: Filter returns wrong entities
+
+**Solution**: Verify you need a subquery. Use test cases to confirm expected behavior.
+
+```java
+// Test both with and without subquery to understand difference
+```
+
+### Slow Queries
+
+**Problem**: Subquery filter is slow
+
+**Solutions**:
+1. Check indexes on foreign keys and join columns
+2. Use `EXPLAIN` to analyze query plan
+3. Consider denormalization for frequently accessed data
+4. Apply more selective filters first using `order` attribute
+5. For very large datasets, consider database-specific optimizations
+
+### Join vs Subquery Confusion
+
+**Problem**: Unsure whether to use subquery flag
+
+**Decision Matrix**:
+
+| Scenario | Use Subquery |
+|----------|-------------|
+| Find entities that HAVE a relationship matching criteria | No (standard join) |
+| Find entities that DON'T have a relationship matching criteria | Yes |
+| Filter on ANY related entity | No |
+| Filter on ALL related entities | Yes |
+| Using NOT/NE operations on one-to-many | Yes |
+| Using EQ operations on one-to-many | No (usually) |
+
+<Tip>
+When in doubt, write a test case with realistic data. The correct approach will produce the expected results.
+</Tip>
+
+<Warning>
+Subqueries with NOT EQUAL are the most common use case. For EQUAL operations, standard joins are usually sufficient and more performant.
+</Warning>
+
+## Advanced Patterns
+
+### Multiple Subquery Filters
+
+```java
+@QFDefinitionClass(UserModel.class)
+public class UserFilterDef {
+    
+    @QFElement(value = "roles.name", subquery = true)
+    private String role;
+    
+    @QFElement(value = "permissions.type", subquery = true)
+    private String permission;
+}
+
+// Users without admin role AND without delete permission
+filter = processor.newQueryFilter(
+    "role=ne:ADMIN&permission=ne:DELETE",
+    QFParamType.RHS_COLON
+);
+```
+
+### Subqueries with Collections
+
+```java
+// Combine subquery filtering with collection size filtering
+filter = processor.newQueryFilter(
+    "role=ne:GUEST&rolesCount=gt:0",
+    QFParamType.RHS_COLON
+);
+```

@@ -1,0 +1,404 @@
+---
+title: "@QFPredicate"
+description: "Create custom predicate expressions for complex filter logic"
+---
+
+## Overview
+
+`@QFPredicate` is a class-level annotation used to define custom predicate expressions that control how filter fields are combined. It allows you to create complex AND/OR logic for filter criteria, enabling sophisticated query patterns.
+
+This annotation is repeatable, allowing multiple named predicates per filter definition.
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target(TYPE)
+@Repeatable(QFPredicates.class)
+public @interface QFPredicate
+```
+
+## Properties
+
+<ParamField path="name" type="String" required>
+  The name of the predicate.
+  
+  Used to select this predicate at runtime via query parameters.
+  
+  Example: `name = "searchByNameOrEmail"`
+</ParamField>
+
+<ParamField path="expression" type="String" required>
+  The logical expression defining how fields are combined.
+  
+  Uses field names with AND/OR operators and parentheses for grouping.
+  
+  Example: `"(name OR email) AND status"`
+  
+  Fields not mentioned in the expression may be ignored or included based on `includeMissing`.
+</ParamField>
+
+<ParamField path="includeMissing" type="boolean" default="true">
+  Include fields not mentioned in the expression.
+  
+  When `true`, fields filtered but not in the expression are added with the `missingOperator`.
+  
+  Example: Expression is `"A OR B"`, filter also uses C:
+  - `includeMissing = true`: Result is `"(A OR B) AND C"`
+  - `includeMissing = false`: C is ignored
+</ParamField>
+
+<ParamField path="missingOperator" type="PredicateOperation" default="AND">
+  The operator used to combine missing fields when `includeMissing = true`.
+  
+  Available options:
+  - `AND`: Missing fields are ANDed together
+  - `OR`: Missing fields are ORed together
+</ParamField>
+
+## Usage Examples
+
+### Basic OR Predicate
+
+```java
+@QFDefinitionClass(User.class)
+@QFPredicate(
+    name = "searchByNameOrEmail",
+    expression = "username OR email"
+)
+public class UserFilterDef {
+    
+    @QFElement("username")
+    private String username;
+    
+    @QFElement("email")
+    private String email;
+    
+    @QFElement("status")
+    private String status;
+}
+```
+
+**Usage:**
+```
+GET /api/users?username=like:%john%&email=like:%@example.com%&predicate=searchByNameOrEmail
+// Returns users where (username LIKE '%john%' OR email LIKE '%@example.com%')
+```
+
+### Complex Expression with Grouping
+
+```java
+@QFDefinitionClass(Product.class)
+@QFPredicate(
+    name = "searchProducts",
+    expression = "(name OR description OR sku) AND (category OR tags)"
+)
+public class ProductFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("description")
+    private String description;
+    
+    @QFElement("sku")
+    private String sku;
+    
+    @QFElement("category.name")
+    private String category;
+    
+    @QFElement("tags")
+    private String tags;
+}
+```
+
+**Usage:**
+```
+GET /api/products?name=like:%laptop%&category=eq:Electronics&predicate=searchProducts
+// (name LIKE '%laptop%') AND (category = 'Electronics')
+```
+
+### Including Missing Fields
+
+```java
+@QFDefinitionClass(Order.class)
+@QFPredicate(
+    name = "flexibleSearch",
+    expression = "customerName OR customerId",
+    includeMissing = true,
+    missingOperator = PredicateOperation.AND
+)
+public class OrderFilterDef {
+    
+    @QFElement("customer.name")
+    private String customerName;
+    
+    @QFElement("customer.id")
+    private Long customerId;
+    
+    @QFElement("status")
+    private String status;
+    
+    @QFElement("total")
+    private BigDecimal total;
+}
+```
+
+**Usage:**
+```
+GET /api/orders?customerName=like:%Smith%&status=eq:PENDING&total=gt:100&predicate=flexibleSearch
+// Result: (customerName LIKE '%Smith%') AND (status = 'PENDING') AND (total > 100)
+// The expression handles customerName OR customerId, and missing fields (status, total) are ANDed
+```
+
+### Multiple Predicates
+
+```java
+@QFDefinitionClass(Article.class)
+@QFPredicate(
+    name = "searchByContent",
+    expression = "title OR body OR summary"
+)
+@QFPredicate(
+    name = "searchByAuthor",
+    expression = "authorName OR authorEmail"
+)
+@QFPredicate(
+    name = "comprehensiveSearch",
+    expression = "(title OR body) AND (authorName OR tags)"
+)
+public class ArticleFilterDef {
+    
+    @QFElement("title")
+    private String title;
+    
+    @QFElement("body")
+    private String body;
+    
+    @QFElement("summary")
+    private String summary;
+    
+    @QFElement("author.name")
+    private String authorName;
+    
+    @QFElement("author.email")
+    private String authorEmail;
+    
+    @QFElement("tags")
+    private String tags;
+}
+```
+
+**Usage:**
+```
+GET /api/articles?title=like:%Spring%&body=like:%Spring%&predicate=searchByContent
+// (title LIKE '%Spring%' OR body LIKE '%Spring%')
+
+GET /api/articles?authorName=eq:John&predicate=searchByAuthor
+// (authorName = 'John')
+
+GET /api/articles?title=like:%Java%&tags=contains:tutorial&predicate=comprehensiveSearch
+// (title LIKE '%Java%') AND (tags CONTAINS 'tutorial')
+```
+
+### Default Predicate
+
+```java
+@QFDefinitionClass(
+    value = Task.class,
+    defaultPredicate = "activeTasksSearch"
+)
+@QFPredicate(
+    name = "activeTasksSearch",
+    expression = "(name OR description) AND status",
+    includeMissing = true
+)
+public class TaskFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("description")
+    private String description;
+    
+    @QFElement(
+        value = "status",
+        defaultValues = {"ACTIVE", "IN_PROGRESS"},
+        defaultOperation = QFOperationEnum.IN
+    )
+    private String status;
+}
+```
+
+The `activeTasksSearch` predicate is used by default.
+
+### Excluding Missing Fields
+
+```java
+@QFPredicate(
+    name = "strictNameSearch",
+    expression = "firstName OR lastName OR username",
+    includeMissing = false
+)
+public class UserFilterDef {
+    
+    @QFElement("firstName")
+    private String firstName;
+    
+    @QFElement("lastName")
+    private String lastName;
+    
+    @QFElement("username")
+    private String username;
+    
+    @QFElement("email")
+    private String email;
+    
+    @QFElement("status")
+    private String status;
+}
+```
+
+**Usage:**
+```
+GET /api/users?firstName=eq:John&email=like:%@test.com&predicate=strictNameSearch
+// Result: (firstName = 'John')
+// The email filter is IGNORED because includeMissing = false
+```
+
+### OR Operator for Missing Fields
+
+```java
+@QFPredicate(
+    name = "flexibleFilter",
+    expression = "primaryEmail OR secondaryEmail",
+    includeMissing = true,
+    missingOperator = PredicateOperation.OR
+)
+public class ContactFilterDef {
+    
+    @QFElement("primaryEmail")
+    private String primaryEmail;
+    
+    @QFElement("secondaryEmail")
+    private String secondaryEmail;
+    
+    @QFElement("phone")
+    private String phone;
+    
+    @QFElement("mobile")
+    private String mobile;
+}
+```
+
+**Usage:**
+```
+GET /api/contacts?primaryEmail=like:%@test.com&phone=eq:555-0100&mobile=eq:555-0200&predicate=flexibleFilter
+// Result: (primaryEmail LIKE '%@test.com%') OR (phone = '555-0100') OR (mobile = '555-0200')
+```
+
+### Real-World Example: E-commerce Search
+
+```java
+@QFDefinitionClass(Product.class)
+@QFPredicate(
+    name = "quickSearch",
+    expression = "name OR sku OR barcode"
+)
+@QFPredicate(
+    name = "advancedSearch",
+    expression = "(name OR description) AND category AND (inStock OR preorder)"
+)
+@QFPredicate(
+    name = "supplierSearch",
+    expression = "(supplierName OR supplierCode) AND (category OR productLine)"
+)
+public class ProductFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("sku")
+    private String sku;
+    
+    @QFElement("barcode")
+    private String barcode;
+    
+    @QFElement("description")
+    private String description;
+    
+    @QFElement("category.name")
+    private String category;
+    
+    @QFElement("inStock")
+    private Boolean inStock;
+    
+    @QFElement("preorder")
+    private Boolean preorder;
+    
+    @QFElement("supplier.name")
+    private String supplierName;
+    
+    @QFElement("supplier.code")
+    private String supplierCode;
+    
+    @QFElement("productLine")
+    private String productLine;
+}
+```
+
+**Usage:**
+```
+GET /api/products?name=like:%laptop%&sku=like:LAP-%&predicate=quickSearch
+// Quick search: (name LIKE '%laptop%' OR sku LIKE 'LAP-%')
+
+GET /api/products?name=like:%gaming%&category=eq:Electronics&inStock=eq:true&predicate=advancedSearch
+// Advanced: (name LIKE '%gaming%') AND (category = 'Electronics') AND (inStock = true)
+```
+
+## Expression Syntax
+
+### Operators
+- `AND`: Logical AND operation
+- `OR`: Logical OR operation
+
+### Grouping
+- Use parentheses `()` to group expressions
+- Example: `(A OR B) AND C`
+
+### Field Names
+- Use the field names from your filter definition class
+- Case-sensitive
+
+### Examples
+```
+"name OR email"
+"(firstName OR lastName) AND status"
+"(title OR body) AND (published OR draft)"
+"category AND (inStock OR preorder) AND (onSale OR featured)"
+```
+
+## Selecting Predicates at Runtime
+
+Use the `predicate` query parameter to select a named predicate:
+
+```
+GET /api/users?username=john&predicate=searchByNameOrEmail
+```
+
+If no predicate is specified, the default predicate (if set in `@QFDefinitionClass`) is used, or all fields are ANDed together.
+
+## Best Practices
+
+1. **Name predicates clearly** to indicate their purpose
+2. **Set a default predicate** for common use cases
+3. **Use parentheses** to make complex expressions clear
+4. **Document predicates** in your API documentation
+5. **Test edge cases** with missing fields and `includeMissing` settings
+6. **Keep expressions simple** - complex logic may be better in custom repository methods
+
+## Related Annotations
+
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Set default predicates
+- [`@QFElement`](/api/annotations/qf-element) - Define filterable fields used in predicates

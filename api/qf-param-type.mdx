@@ -1,0 +1,301 @@
+---
+title: QFParamType
+description: Parameter syntax types for filter queries
+---
+
+## Overview
+
+`QFParamType` is an enumeration that defines the two standard syntax formats for expressing filter operations in query parameters.
+
+## Enum Values
+
+### RHS_COLON
+
+Right-Hand Side Colon syntax places the operation on the right side of the equals sign, separated by a colon.
+
+**Format:**
+```
+fieldName=operation:value
+```
+
+**Examples:**
+```
+name=eq:John
+age=gt:18
+status=in:ACTIVE,PENDING
+email=like:@example.com
+sort=-createdAt
+```
+
+**Full Query String:**
+```
+name=eq:John&age=gte:18&status=in:ACTIVE,PENDING&sort=-createdAt,+name
+```
+
+**Characteristics:**
+- Simple and readable
+- Operation and value separated by colon (`:`)
+- Default operation is `eq` (equal) if no colon is present
+- Common in REST APIs
+
+### LHS_BRACKETS
+
+Left-Hand Side Brackets syntax places the operation in brackets on the left side, before the equals sign.
+
+**Format:**
+```
+fieldName[operation]=value
+```
+
+**Examples:**
+```
+name[eq]=John
+age[gt]=18
+status[in]=ACTIVE,PENDING
+email[like]=@example.com
+sort=-createdAt
+```
+
+**Full Query String:**
+```
+name[eq]=John&age[gte]=18&status[in]=ACTIVE,PENDING&sort=-createdAt,+name
+```
+
+**Characteristics:**
+- Operation in brackets before equals sign
+- Default operation is `eq` (equal) if no brackets present
+- Similar to array syntax in some frameworks
+- Compatible with URL encoding standards
+
+## Methods
+
+### getPattern()
+
+Get the compiled regex pattern for parsing this syntax type.
+
+```java
+public Pattern getPattern()
+```
+
+**Returns:** Compiled `Pattern` object
+
+### getBeautifulName()
+
+Get the human-readable name of the syntax type.
+
+```java
+public String getBeautifulName()
+```
+
+**Returns:**
+- `"RHS Colon"` for RHS_COLON
+- `"LHS Brackets"` for LHS_BRACKETS
+
+### extractOP()
+
+Extract the operation from a parameter value.
+
+```java
+abstract String extractOP(String value)
+```
+
+**Parameters:**
+- `value` - The parameter value string
+
+**Returns:** Operation string (e.g., "eq", "gt", "like")
+
+**Examples:**
+```java
+// RHS_COLON
+QFParamType.RHS_COLON.extractOP("eq:John"); // Returns "eq"
+QFParamType.RHS_COLON.extractOP("John"); // Returns "eq" (default)
+
+// LHS_BRACKETS  
+QFParamType.LHS_BRACKETS.extractOP("[eq]=John"); // Returns "eq"
+QFParamType.LHS_BRACKETS.extractOP("=John"); // Returns "eq" (default)
+```
+
+### extractValue()
+
+Extract the value from a parameter value.
+
+```java
+abstract String extractValue(String value)
+```
+
+**Parameters:**
+- `value` - The parameter value string
+
+**Returns:** The actual value (without operation)
+
+**Examples:**
+```java
+// RHS_COLON
+QFParamType.RHS_COLON.extractValue("eq:John"); // Returns "John"
+QFParamType.RHS_COLON.extractValue("John"); // Returns "John"
+
+// LHS_BRACKETS
+QFParamType.LHS_BRACKETS.extractValue("[eq]=John"); // Returns "John"
+QFParamType.LHS_BRACKETS.extractValue("=John"); // Returns "John"
+```
+
+### buildParam()
+
+Build a parameter string from field, operation, and value.
+
+```java
+abstract String buildParam(String field, String op, String value)
+```
+
+**Parameters:**
+- `field` - Field name
+- `op` - Operation string
+- `value` - Value string
+
+**Returns:** Formatted parameter string
+
+**Examples:**
+```java
+// RHS_COLON
+QFParamType.RHS_COLON.buildParam("name", "eq", "John"); // Returns "name=eq:John"
+
+// LHS_BRACKETS
+QFParamType.LHS_BRACKETS.buildParam("name", "eq", "John"); // Returns "name[eq]=John"
+```
+
+## When to Use Each Type
+
+### Use RHS_COLON when:
+
+- You want a more readable, developer-friendly syntax
+- Your API consumers are familiar with colon-separated operations
+- You're building a new API and want simple, clean URLs
+- Documentation and examples are easier to read
+
+**Example API:**
+```
+GET /api/users?name=like:John&age=gte:18&sort=-createdAt
+```
+
+### Use LHS_BRACKETS when:
+
+- You need compatibility with frameworks that use bracket notation
+- Your front-end framework uses bracket-style query parameters
+- You want to avoid potential issues with colon characters in URLs
+- Your URL encoding requirements prefer this format
+
+**Example API:**
+```
+GET /api/users?name[like]=John&age[gte]=18&sort=-createdAt
+```
+
+## Syntax Comparison
+
+| Feature | RHS_COLON | LHS_BRACKETS |
+|---------|-----------|-------------|
+| **Format** | `field=op:value` | `field[op]=value` |
+| **Example** | `age=gt:18` | `age[gt]=18` |
+| **Default op** | `eq` | `eq` |
+| **Readability** | High | Medium |
+| **Special chars** | Colon (`:`) | Brackets (`[]`) |
+| **URL encoding** | May need encoding | Standard |
+| **Multiple values** | `status=in:A,B,C` | `status[in]=A,B,C` |
+| **Sorting** | `sort=-created,+name` | `sort=-created,+name` |
+
+## Sorting Syntax
+
+Both types use the same sorting syntax:
+
+```
+sort=direction+field1,direction+field2
+```
+
+**Directions:**
+- `+` or omitted - Ascending order
+- `-` - Descending order
+
+**Examples:**
+```
+sort=+name,-createdAt
+sort=-price,name
+```
+
+## Multiple Values
+
+Both syntax types use comma-separated values for operations that accept multiple values:
+
+**RHS_COLON:**
+```
+status=in:ACTIVE,PENDING,APPROVED
+id=in:1,2,3,4,5
+```
+
+**LHS_BRACKETS:**
+```
+status[in]=ACTIVE,PENDING,APPROVED
+id[in]=1,2,3,4,5
+```
+
+## Special Cases
+
+### Between Operation
+
+Requires exactly two comma-separated values:
+
+**RHS_COLON:**
+```
+age=btw:18,65
+price=btw:100.00,500.00
+```
+
+**LHS_BRACKETS:**
+```
+age[btw]=18,65
+price[btw]=100.00,500.00
+```
+
+### Null Checks
+
+**RHS_COLON:**
+```
+email=null:true   # IS NULL
+email=null:false  # IS NOT NULL
+```
+
+**LHS_BRACKETS:**
+```
+email[null]=true   # IS NULL
+email[null]=false  # IS NOT NULL
+```
+
+## Usage Example
+
+```java
+import io.github.acoboh.query.filter.jpa.processor.QFParamType;
+
+// Using RHS_COLON
+String rhsQuery = "name=eq:John&age=gt:18";
+QueryFilter<User> rhsFilter = processor.newQueryFilter(rhsQuery, QFParamType.RHS_COLON);
+
+// Using LHS_BRACKETS
+String lhsQuery = "name[eq]=John&age[gt]=18";
+QueryFilter<User> lhsFilter = processor.newQueryFilter(lhsQuery, QFParamType.LHS_BRACKETS);
+
+// Both produce equivalent filters
+List<User> users1 = userRepository.findAll(rhsFilter);
+List<User> users2 = userRepository.findAll(lhsFilter);
+```
+
+## Best Practices
+
+1. **Choose one and stick with it** - Don't mix both syntaxes in the same API
+2. **Document clearly** - Make sure your API documentation shows which syntax you use
+3. **Validate early** - Parse and validate filter strings at the controller level
+4. **Provide examples** - Include working examples in your API documentation
+5. **Handle errors gracefully** - Return clear error messages for invalid syntax
+
+## See Also
+
+- [Operations](/api/operations) - Available filter operations
+- [QueryFilter](/api/query-filter) - Main filter class
+- [Quick Start](/quickstart) - Basic usage examples

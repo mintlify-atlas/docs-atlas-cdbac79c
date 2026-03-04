@@ -1,0 +1,494 @@
+---
+title: Spring Boot 4 Example
+description: Complete working example for QueryFilterJPA with Spring Boot 4 and migration guide from Spring Boot 3
+---
+
+This guide provides a complete working example of QueryFilterJPA with Spring Boot 4, including migration notes from Spring Boot 3.
+
+## What's New in Spring Boot 4
+
+Spring Boot 4 introduces several changes:
+- Updated to Jakarta EE 11 (from Jakarta EE 10)
+- Hibernate 7.x (from Hibernate 6.x)
+- Java 21+ required (previously Java 17+)
+- Updated dependency versions across the ecosystem
+
+## Project Setup
+
+### Maven Dependencies
+
+Add the following dependencies to your `pom.xml`:
+
+```xml
+<properties>
+    <java.version>21</java.version>
+    <spring-boot.version>4.0.3</spring-boot.version>
+    <query-filter.version>2.0.0</query-filter.version>
+    <springdoc.version>3.0.0</springdoc.version>
+</properties>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-dependencies</artifactId>
+            <version>${spring-boot.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <!-- Spring Boot Starters -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- QueryFilterJPA for Spring Boot 4 -->
+    <dependency>
+        <groupId>io.github.acoboh</groupId>
+        <artifactId>query-filter-jpa-4</artifactId>
+        <version>${query-filter.version}</version>
+    </dependency>
+    
+    <!-- Optional: OpenAPI integration -->
+    <dependency>
+        <groupId>io.github.acoboh</groupId>
+        <artifactId>query-filter-jpa-openapi-4</artifactId>
+        <version>${query-filter.version}</version>
+    </dependency>
+    
+    <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>${springdoc.version}</version>
+    </dependency>
+
+    <!-- Database -->
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <scope>runtime</scope>
+    </dependency>
+    
+    <!-- Hypersistence Utils for Hibernate 7 -->
+    <dependency>
+        <groupId>io.hypersistence</groupId>
+        <artifactId>hypersistence-utils-hibernate-71</artifactId>
+        <version>3.12.0</version>
+    </dependency>
+</dependencies>
+```
+
+### Gradle Dependencies
+
+For Gradle, add to your `build.gradle`:
+
+```gradle
+java {
+    sourceCompatibility = '21'
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'io.github.acoboh:query-filter-jpa-4:2.0.0'
+    
+    // Optional: OpenAPI integration
+    implementation 'io.github.acoboh:query-filter-jpa-openapi-4:2.0.0'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
+    
+    implementation 'io.hypersistence:hypersistence-utils-hibernate-71:3.12.0'
+    runtimeOnly 'org.postgresql:postgresql'
+}
+```
+
+## Migration from Spring Boot 3
+
+### 1. Update Dependencies
+
+Change the QueryFilter artifact:
+
+```diff
+- <artifactId>query-filter-jpa-3</artifactId>
++ <artifactId>query-filter-jpa-4</artifactId>
+```
+
+```diff
+- <artifactId>query-filter-jpa-openapi-3</artifactId>
++ <artifactId>query-filter-jpa-openapi-4</artifactId>
+```
+
+### 2. Update Spring Boot Version
+
+```diff
+- <spring-boot.version>3.5.2</spring-boot.version>
++ <spring-boot.version>4.0.3</spring-boot.version>
+```
+
+### 3. Update Java Version
+
+Spring Boot 4 requires Java 21 or higher:
+
+```diff
+- <java.version>17</java.version>
++ <java.version>21</java.version>
+```
+
+### 4. Update Hypersistence Utils
+
+For Hibernate 7 support:
+
+```diff
+- <artifactId>hypersistence-utils-hibernate-63</artifactId>
+- <version>3.10.1</version>
++ <artifactId>hypersistence-utils-hibernate-71</artifactId>
++ <version>3.12.0</version>
+```
+
+### 5. Update SpringDoc OpenAPI
+
+```diff
+- <springdoc.version>2.8.9</springdoc.version>
++ <springdoc.version>3.0.0</springdoc.version>
+```
+
+### 6. Code Changes
+
+No changes required in your QueryFilter code! The filter definitions, entities, repositories, and controllers remain identical:
+
+```java
+// Filter definition - NO CHANGES
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    @QFElement("title")
+    private String title;
+    
+    @QFElement("likes")
+    private int likes;
+    // ... rest remains the same
+}
+
+// Controller - NO CHANGES
+@GetMapping("/posts")
+public Page<PostDTO> getPosts(
+    @QFParam(PostFilterDef.class) 
+    @RequestParam(required = false, defaultValue = "", name = "filter") 
+    QueryFilter<PostBlog> filter) {
+    return service.getPosts(filter);
+}
+```
+
+## Complete Example
+
+The complete code structure is identical to the Spring Boot 3 example. Here's the key configuration:
+
+### Application Class
+
+```java
+package com.example.app;
+
+import static org.springframework.data.web.config.EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.web.config.EnableSpringDataWebSupport;
+
+import com.example.app.filterdef.PostFilterDef;
+import io.github.acoboh.query.filter.jpa.annotations.EnableQueryFilter;
+
+@SpringBootApplication
+@EnableQueryFilter(basePackageClasses = PostFilterDef.class)
+@EnableSpringDataWebSupport(pageSerializationMode = VIA_DTO)
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}
+```
+
+### Filter Definition
+
+```java
+package com.example.app.filterdef;
+
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import com.example.app.entities.PostBlog;
+import io.github.acoboh.query.filter.jpa.annotations.*;
+
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    @QFElement("title")
+    private String title;
+    
+    @QFElement("likes")
+    private int likes;
+    
+    @QFDate
+    @QFElement("createDate")
+    private LocalDateTime createDate;
+    
+    @QFSortable("lastTimestamp")
+    private Timestamp lastTimestamp;
+    
+    @QFElement("postType")
+    private String postType;
+    
+    @QFElement("published")
+    @QFBlockParsing
+    private boolean published;
+}
+```
+
+### Entity Class
+
+```java
+package com.example.app.entities;
+
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.List;
+import jakarta.persistence.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+
+@Entity
+public class PostBlog extends BaseEntity {
+    
+    public enum PostType {
+        EDUCATIONAL, INFO, SOCIAL, VIDEO
+    }
+    
+    private String title;
+    private String content;
+    private int likes;
+    
+    @CreatedDate
+    private LocalDateTime createDate;
+    
+    @LastModifiedBy
+    private Timestamp lastTimestamp;
+    
+    private boolean published;
+    
+    @Enumerated(EnumType.STRING)
+    private PostType postType;
+    
+    @OneToMany(mappedBy = "post", orphanRemoval = true)
+    private List<Comment> comments;
+    
+    // Constructors, getters, setters...
+}
+```
+
+### Repository
+
+```java
+package com.example.app.repositories;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import com.example.app.entities.PostBlog;
+
+public interface PostBlogRepository 
+    extends JpaSpecificationExecutor<PostBlog>, JpaRepository<PostBlog, String> {
+}
+```
+
+### Controller
+
+```java
+package com.example.app.controllers;
+
+import com.example.app.domain.PostDTO;
+import com.example.app.entities.PostBlog;
+import com.example.app.filterdef.PostFilterDef;
+import com.example.app.services.PostBlogService;
+import io.github.acoboh.query.filter.jpa.annotations.*;
+import io.github.acoboh.query.filter.jpa.processor.QueryFilter;
+import org.springframework.data.domain.Page;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/posts")
+public class PostRestController {
+    
+    private final PostBlogService service;
+    
+    public PostRestController(PostBlogService service) {
+        this.service = service;
+    }
+    
+    @GetMapping("/single-param")
+    public Page<PostDTO> getPosts(
+        @QFParam(PostFilterDef.class) 
+        @RequestParam(required = false, defaultValue = "", name = "filter") 
+        QueryFilter<PostBlog> filter,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "10") int size) {
+        return service.getPosts(filter, page, size);
+    }
+    
+    @GetMapping("/multi-param")
+    public Page<PostDTO> getPostMultiFilter(
+        @QFMultiParam(PostFilterDef.class) QueryFilter<PostBlog> filter,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "10") int size) {
+        return service.getPosts(filter, page, size);
+    }
+}
+```
+
+## Application Configuration
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/testdb
+    username: postgres
+    password: password
+    hikari:
+      connection-timeout: 20000
+      maximum-pool-size: 5
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+      
+logging:
+  level:
+    io.github.acoboh: debug
+```
+
+## Example API Calls
+
+The API remains unchanged from Spring Boot 3:
+
+```bash
+# Filter by title
+GET /posts/single-param?filter=title~*Spring*
+
+# Filter by likes
+GET /posts/single-param?filter=likes>100
+
+# Published posts only
+GET /posts/single-param?filter=published:true
+
+# Multiple filters with AND
+GET /posts/single-param?filter=published:true%26likes>50
+
+# Date range filtering
+GET /posts/single-param?filter=createDate>2024-01-01%26createDate<2024-12-31
+
+# With sorting
+GET /posts/single-param?filter=+sort(likes,desc)
+
+# Multi-parameter style
+GET /posts/multi-param?published:true&likes>50&+sort(createDate,desc)
+```
+
+## Running the Application
+
+1. Ensure Java 21+ is installed:
+   ```bash
+   java -version
+   ```
+
+2. Start PostgreSQL:
+   ```bash
+   docker run -d --name postgres \
+     -e POSTGRES_DB=testdb \
+     -e POSTGRES_USER=postgres \
+     -e POSTGRES_PASSWORD=password \
+     -p 5432:5432 postgres:17
+   ```
+
+3. Run the application:
+   ```bash
+   mvn spring-boot:run
+   ```
+
+4. Access Swagger UI:
+   ```
+   http://localhost:8080/swagger-ui.html
+   ```
+
+## Migration Checklist
+
+Use this checklist when migrating from Spring Boot 3 to 4:
+
+- [ ] Update Java to version 21 or higher
+- [ ] Update Spring Boot version to 4.x
+- [ ] Change `query-filter-jpa-3` to `query-filter-jpa-4`
+- [ ] Change `query-filter-jpa-openapi-3` to `query-filter-jpa-openapi-4`
+- [ ] Update Hypersistence Utils to hibernate-71 version
+- [ ] Update SpringDoc OpenAPI to 3.x
+- [ ] Update any other dependencies to Spring Boot 4 compatible versions
+- [ ] Test all filtering functionality
+- [ ] Verify OpenAPI documentation generates correctly
+
+## Performance Improvements
+
+Spring Boot 4 with Hibernate 7 brings several performance improvements:
+
+- **Better query optimization**: Hibernate 7 generates more efficient SQL
+- **Improved connection pooling**: HikariCP optimizations in Spring Boot 4
+- **Virtual threads support**: Better scalability with Java 21 virtual threads
+
+### Enable Virtual Threads (Java 21+)
+
+Add to `application.yml`:
+
+```yaml
+spring:
+  threads:
+    virtual:
+      enabled: true
+```
+
+## Troubleshooting
+
+### Dependency Conflicts
+
+If you encounter dependency conflicts, ensure all dependencies are compatible with Spring Boot 4:
+
+```bash
+mvn dependency:tree
+```
+
+### Hibernate 7 Breaking Changes
+
+Most Hibernate changes are handled internally, but if you use native queries, review the [Hibernate 7 migration guide](https://hibernate.org/orm/releases/7.0/).
+
+### JBoss Logging
+
+Spring Boot 4 may require explicit JBoss Logging dependency:
+
+```xml
+<dependency>
+    <groupId>org.jboss.logging</groupId>
+    <artifactId>jboss-logging</artifactId>
+</dependency>
+```
+
+## Next Steps
+
+- Explore [common filtering patterns](/examples/common-patterns)
+- Review [performance optimization tips](/examples/common-patterns#performance-tips)
+- Check out [advanced configuration](/advanced/discriminators)
+- Learn about [security considerations](/examples/common-patterns#security-considerations)

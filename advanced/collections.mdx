@@ -1,0 +1,457 @@
+---
+title: "Collection Filtering"
+description: "Filter entities based on collection size and properties using @QFCollectionElement"
+---
+
+The `@QFCollectionElement` annotation enables filtering entities based on the size of their collection relationships. This is useful for finding entities that have a specific number of related items, such as posts with a certain number of comments.
+
+## Overview
+
+Collection filtering allows you to query entities based on the count of items in their one-to-many or many-to-many relationships using JPA Criteria API's `size()` function.
+
+## Basic Usage
+
+### Entity Setup
+
+Define entities with collection relationships:
+
+```java
+@Entity
+public class PostBlog {
+    @Id
+    @GeneratedValue
+    private Long id;
+    
+    private String author;
+    private String text;
+    
+    @OneToMany(mappedBy = "postBlog")
+    private Set<Comments> comments = new HashSet<>();
+}
+
+@Entity
+public class Comments {
+    @Id
+    @GeneratedValue
+    private Integer id;
+    
+    private String author;
+    private String comment;
+    private Integer likes;
+    
+    @ManyToOne
+    private PostBlog postBlog;
+}
+```
+
+### Filter Definition
+
+Define a filter with the `@QFCollectionElement` annotation:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFCollectionElement("comments")
+    private int commentsSize;
+    
+    @QFElement("comments.author")
+    private String authorComments;
+}
+```
+
+### Filtering by Collection Size
+
+Use collection filters in your queries:
+
+```java
+// Find posts with exactly 1 comment
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "commentsSize=eq:1",
+    QFParamType.RHS_COLON
+);
+List<PostBlog> posts = repository.findAll(filter);
+
+// Find posts with more than 5 comments
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "commentsSize=gt:5",
+    QFParamType.RHS_COLON
+);
+```
+
+## Supported Operations
+
+The `@QFCollectionElement` annotation supports comparison operations:
+
+| Operation | Code | Description |
+|-----------|------|-------------|
+| Equal | `eq` | Exact collection size |
+| Not Equal | `ne` | Different collection size |
+| Greater Than | `gt` | Collection size greater than value |
+| Greater or Equal | `gte` | Collection size greater than or equal to value |
+| Less Than | `lt` | Collection size less than value |
+| Less or Equal | `lte` | Collection size less than or equal to value |
+
+### Examples
+
+```java
+// Posts with no comments
+filter = processor.newQueryFilter("commentsSize=eq:0", QFParamType.RHS_COLON);
+
+// Posts with at least 10 comments
+filter = processor.newQueryFilter("commentsSize=gte:10", QFParamType.RHS_COLON);
+
+// Posts with less than 3 comments
+filter = processor.newQueryFilter("commentsSize=lt:3", QFParamType.RHS_COLON);
+
+// Posts with between 5 and 10 comments (using multiple filters)
+filter = processor.newQueryFilter(
+    "commentsSize=gte:5&commentsSize=lte:10",
+    QFParamType.RHS_COLON
+);
+```
+
+## Configuration Options
+
+### Custom Filter Name
+
+Specify a custom name for the filter field:
+
+```java
+@QFCollectionElement(
+    value = "comments",
+    name = "commentCount"
+)
+private int commentsSize;
+```
+
+Query with: `commentCount=gt:5`
+
+### Join Types
+
+Configure join behavior:
+
+```java
+@QFCollectionElement(
+    value = "comments",
+    joinTypes = {JoinType.LEFT}
+)
+private int commentsSize;
+```
+
+Useful when you want to include entities with null collections (use `LEFT` join).
+
+### Allowed Operations
+
+Restrict which operations are permitted:
+
+```java
+@QFCollectionElement(
+    value = "comments",
+    allowedOperations = {
+        QFCollectionOperationEnum.EQUAL,
+        QFCollectionOperationEnum.GREATER_THAN,
+        QFCollectionOperationEnum.LESS_THAN
+    }
+)
+private int commentsSize;
+```
+
+### Default Values
+
+Set a default collection size filter:
+
+```java
+@QFCollectionElement(
+    value = "comments",
+    defaultValue = 2,
+    defaultOperation = QFCollectionOperationEnum.LESS_THAN
+)
+private int commentsSize;
+
+// Without explicit filter, defaults to: comments.size < 2
+QueryFilter<PostBlog> filter = processor.newQueryFilter();
+```
+
+### Execution Order
+
+Control the order of filter application:
+
+```java
+@QFCollectionElement(
+    value = "comments",
+    order = 1
+)
+private int commentsSize;
+```
+
+## Advanced Usage
+
+### Programmatic Filtering
+
+Manually construct collection filters:
+
+```java
+QueryFilter<PostBlog> filter = processor.newQueryFilter("", QFParamType.RHS_COLON);
+
+// Add collection size filter
+filter.addNewField(
+    "commentsSize",
+    QFCollectionOperationEnum.GREATER_THAN,
+    1
+);
+
+List<PostBlog> posts = repository.findAll(filter);
+
+// Get actual collection value
+Integer actualValue = filter.getActualCollectionValue("commentsSize");
+
+// Override existing filter
+filter.overrideField(
+    "commentsSize",
+    QFCollectionOperationEnum.LESS_THAN,
+    2
+);
+
+// Delete collection filter
+filter.deleteField("commentsSize");
+```
+
+### Inspecting Collection Operations
+
+Retrieve collection filter details:
+
+```java
+// Get first collection operation and value
+var pair = filter.getFirstActualCollectionOperation("commentsSize");
+QFCollectionOperationEnum operation = pair.getFirst();
+Integer value = pair.getSecond();
+
+// Get all collection operations for a field
+List<Pair<QFCollectionOperationEnum, Integer>> operations =
+    filter.getActualCollectionOperation("commentsSize");
+
+// Get all field values
+List<QFFieldInfo> allFields = filter.getAllFieldValues();
+for (QFFieldInfo field : allFields) {
+    String name = field.name();
+    String operation = field.operation();
+    List<String> values = field.values();
+}
+```
+
+## Combining with Element Filters
+
+Combine collection size filtering with element property filtering:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    // Filter by collection size
+    @QFCollectionElement("comments")
+    private int commentsSize;
+    
+    // Filter by collection element property
+    @QFElement("comments.author")
+    private String commentAuthor;
+    
+    // Filter by collection element property
+    @QFElement("comments.likes")
+    private int commentLikes;
+}
+
+// Find posts with exactly 1 comment by "Author 1"
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "commentsSize=eq:1&commentAuthor=eq:Author 1",
+    QFParamType.RHS_COLON
+);
+
+// Find posts with more than 5 comments, where at least one has 100+ likes
+filter = processor.newQueryFilter(
+    "commentsSize=gt:5&commentLikes=gte:100",
+    QFParamType.RHS_COLON
+);
+```
+
+## Working with Discriminators
+
+Use collection filtering with inheritance hierarchies:
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public class ParentEntity {
+    // Base fields
+}
+
+@Entity
+public class SubclassAEntity extends ParentEntity {
+    @OneToMany
+    private List<Link> links;
+}
+
+@QFDefinitionClass(ParentEntity.class)
+public class FilterParentEntityDef {
+    
+    @QFCollectionElement(
+        value = "links",
+        subClassMapping = SubclassAEntity.class
+    )
+    private int links;
+}
+```
+
+### Nested Discriminator Collections
+
+Filter collections on nested discriminator classes:
+
+```java
+@QFCollectionElement(
+    value = "links",
+    subClassMapping = SubclassAEntity.class,
+    subClassMappingPath = "parent"
+)
+private int linkCount;
+```
+
+## Common Patterns
+
+### Finding Empty Collections
+
+```java
+// Posts with no comments
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "commentsSize=eq:0",
+    QFParamType.RHS_COLON
+);
+```
+
+### Finding Non-Empty Collections
+
+```java
+// Posts with at least one comment
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "commentsSize=gt:0",
+    QFParamType.RHS_COLON
+);
+```
+
+### Range Filtering
+
+```java
+// Posts with 5 to 10 comments (inclusive)
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "commentsSize=gte:5&commentsSize=lte:10",
+    QFParamType.RHS_COLON
+);
+```
+
+### Popular Content
+
+```java
+// Find popular posts (more than 50 comments)
+QueryFilter<PostBlog> filter = processor.newQueryFilter(
+    "commentsSize=gt:50",
+    QFParamType.RHS_COLON
+);
+```
+
+### Combining Multiple Criteria
+
+```java
+// Posts by "Author 2" with more than 1 comment
+filter = processor.newQueryFilter(
+    "commentsSize=gt:1&author=eq:Author 2",
+    QFParamType.RHS_COLON
+);
+
+// Posts with between 1-2 comments by specific author
+filter = processor.newQueryFilter(
+    "commentsSize=gte:1&commentsSize=lte:2&commentAuthor=ne:Author 1",
+    QFParamType.RHS_COLON
+);
+```
+
+## Collection Types
+
+Collection filtering works with all JPA collection types:
+
+### Lists
+
+```java
+@OneToMany
+private List<Comment> comments;
+```
+
+### Sets
+
+```java
+@OneToMany
+private Set<Tag> tags;
+```
+
+### Maps (size only)
+
+```java
+@ElementCollection
+private Map<String, String> metadata;
+```
+
+## Best Practices
+
+1. **Index foreign keys**: Ensure collection foreign keys are indexed for better performance
+2. **Use appropriate fetch strategies**: Consider lazy vs eager loading based on your use case
+3. **Combine with pagination**: Collection size filtering can be expensive; use with pagination
+4. **Cache collection sizes**: For frequently accessed sizes, consider denormalization
+5. **Validate ranges**: Use `allowedOperations` to prevent unreasonable queries
+6. **Use LEFT joins for optional collections**: Prevent filtering out entities with null collections
+
+## Performance Considerations
+
+### Query Complexity
+
+Collection size filtering adds a `size()` function to your query:
+
+```sql
+-- Generated SQL (simplified)
+SELECT p.*
+FROM post_blog p
+WHERE (
+    SELECT COUNT(*)
+    FROM comments c
+    WHERE c.post_blog_id = p.id
+) > 5
+```
+
+### Optimization Tips
+
+1. **Add indexes**: Index foreign key columns in collection tables
+2. **Denormalize when appropriate**: Store collection counts in the parent entity for frequently accessed data
+3. **Use database-specific optimizations**: Some databases optimize `COUNT` queries better than others
+4. **Combine filters efficiently**: Apply more selective filters first using the `order` attribute
+
+<Tip>
+For better performance on large datasets, consider maintaining a denormalized count column that's updated via database triggers or application logic.
+</Tip>
+
+<Warning>
+Filtering by collection size on very large collections can be slow. Consider using denormalization or database-specific optimizations for high-traffic queries.
+</Warning>
+
+## Error Handling
+
+```java
+try {
+    QueryFilter<PostBlog> filter = processor.newQueryFilter(
+        "commentsSize=eq:invalid",
+        QFParamType.RHS_COLON
+    );
+} catch (QFCollectionException e) {
+    // Handle collection-specific errors
+    logger.error("Collection filter error: {}", e.getMessage());
+}
+```

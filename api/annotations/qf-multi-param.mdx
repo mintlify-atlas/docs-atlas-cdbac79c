@@ -1,0 +1,227 @@
+---
+title: "@QFMultiParam"
+description: "Bind multiple filter parameters from query strings in Spring MVC controller methods"
+---
+
+## Overview
+
+`@QFMultiParam` is a parameter-level annotation similar to `@QFParam`, but designed to handle multiple query string parameters more flexibly. It provides an option to ignore unknown parameters that don't match any field in the filter definition.
+
+## Annotation Signature
+
+```java
+@Retention(RUNTIME)
+@Target(PARAMETER)
+public @interface QFMultiParam
+```
+
+## Properties
+
+<ParamField path="value" type="Class<?>" required>
+  The filter definition class to use for parsing.
+  
+  This should be a class annotated with `@QFDefinitionClass`.
+  
+  Example: `@QFMultiParam(UserFilterDef.class)`
+</ParamField>
+
+<ParamField path="type" type="QFParamType" default="RHS_COLON">
+  The parsing standard to use for filter parameters.
+  
+  Available options:
+  - `RHS_COLON`: Right-hand side colon format (e.g., `name=eq:John`)
+  - `LHS_BRACKETS`: Left-hand side brackets format (e.g., `name[eq]=John`)
+</ParamField>
+
+<ParamField path="ignoreUnknown" type="boolean" default="true">
+  Whether to ignore unknown parameters that don't match any field in the filter class.
+  
+  When `true`, parameters that don't correspond to any defined filter field will be silently ignored. When `false`, unknown parameters will cause an error.
+  
+  This is particularly useful when your endpoint accepts additional query parameters beyond filter fields (e.g., pagination, API keys, tracking parameters).
+</ParamField>
+
+## Differences from @QFParam
+
+| Feature | @QFParam | @QFMultiParam |
+|---------|----------|---------------|
+| Unknown parameters | Throws error | Can be ignored with `ignoreUnknown=true` |
+| Use case | Strict filtering only | Mixed parameters (filters + other query params) |
+| Default behavior | Strict | Lenient |
+| Base64 support | Yes | No |
+
+## Usage Examples
+
+### Basic Usage
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @GetMapping
+    public List<User> getUsers(
+        @QFMultiParam(UserFilterDef.class) QueryFilter<User> filter
+    ) {
+        return userRepository.findAll(filter);
+    }
+}
+```
+
+**Request with unknown parameters (ignored by default):**
+```
+GET /api/users?username=eq:john&age=gt:25&apiKey=xyz123&trackingId=abc
+```
+
+The `apiKey` and `trackingId` parameters are ignored, and only `username` and `age` are processed as filters.
+
+### Strict Mode (Fail on Unknown Parameters)
+
+```java
+@GetMapping("/strict")
+public List<Product> getProducts(
+    @QFMultiParam(value = ProductFilterDef.class, ignoreUnknown = false) 
+    QueryFilter<Product> filter
+) {
+    return productRepository.findAll(filter);
+}
+```
+
+**This will throw an error:**
+```
+GET /api/products/strict?name=eq:laptop&unknownParam=value
+```
+
+### With Pagination Parameters
+
+```java
+@GetMapping
+public Page<Order> getOrders(
+    @QFMultiParam(OrderFilterDef.class) QueryFilter<Order> filter,
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "20") int size
+) {
+    Pageable pageable = PageRequest.of(page, size);
+    return orderRepository.findAll(filter, pageable);
+}
+```
+
+**Request:**
+```
+GET /api/orders?status=eq:PENDING&total=gt:100&page=0&size=20
+```
+
+The `page` and `size` parameters are handled by `@RequestParam`, while filter parameters are handled by `@QFMultiParam`.
+
+### Using LHS Brackets Format
+
+```java
+@GetMapping("/search")
+public List<Employee> searchEmployees(
+    @QFMultiParam(value = EmployeeFilterDef.class, type = QFParamType.LHS_BRACKETS) 
+    QueryFilter<Employee> filter
+) {
+    return employeeRepository.findAll(filter);
+}
+```
+
+**Request:**
+```
+GET /api/employees/search?department[eq]=IT&salary[gte]=50000
+```
+
+### Mixed Parameters Example
+
+```java
+@GetMapping("/reports")
+public ResponseEntity<List<Report>> getReports(
+    @QFMultiParam(ReportFilterDef.class) QueryFilter<Report> filter,
+    @RequestParam(required = false) String format,
+    @RequestParam(required = false) String locale,
+    @RequestHeader("Authorization") String authHeader
+) {
+    // Filter parameters are processed by QueryFilter
+    // format and locale are additional parameters
+    // authHeader is from headers
+    
+    List<Report> reports = reportRepository.findAll(filter);
+    
+    if ("pdf".equals(format)) {
+        return ResponseEntity.ok()
+            .header("Content-Type", "application/pdf")
+            .body(reports);
+    }
+    
+    return ResponseEntity.ok(reports);
+}
+```
+
+**Request:**
+```
+GET /api/reports?type=eq:MONTHLY&status=eq:COMPLETED&format=pdf&locale=en_US
+```
+
+### Handling Unknown Parameters Manually
+
+```java
+@GetMapping("/advanced")
+public ResponseEntity<?> advancedSearch(
+    @QFMultiParam(value = ProductFilterDef.class, ignoreUnknown = true) 
+    QueryFilter<Product> filter,
+    HttpServletRequest request
+) {
+    // Process known filters
+    List<Product> products = productRepository.findAll(filter);
+    
+    // Manually handle additional parameters if needed
+    String debugMode = request.getParameter("debug");
+    if ("true".equals(debugMode)) {
+        return ResponseEntity.ok(Map.of(
+            "products", products,
+            "filterInfo", filter.toString()
+        ));
+    }
+    
+    return ResponseEntity.ok(products);
+}
+```
+
+## Filter Definition Example
+
+```java
+@QFDefinitionClass(Product.class)
+public class ProductFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("category.name")
+    private String categoryName;
+    
+    @QFElement("price")
+    private BigDecimal price;
+    
+    @QFElement("inStock")
+    private Boolean inStock;
+}
+```
+
+## When to Use @QFMultiParam vs @QFParam
+
+**Use `@QFMultiParam` when:**
+- Your endpoint accepts additional query parameters beyond filters
+- You want to ignore unknown or non-filter parameters
+- You're building APIs that might receive tracking, analytics, or other metadata parameters
+- You want more flexibility in parameter handling
+
+**Use `@QFParam` when:**
+- You want strict validation of filter parameters
+- You need Base64 encoding support
+- All query parameters should be filter-related
+- You want to fail fast on invalid parameters
+
+## Related Annotations
+
+- [`@QFParam`](/api/annotations/qf-param) - Strict single filter parameter binding
+- [`@QFDefinitionClass`](/api/annotations/qf-definition-class) - Define the filter class
+- [`@QFElement`](/api/annotations/qf-element) - Define filterable fields
