@@ -1,0 +1,251 @@
+---
+title: "@QFOnFilterPresent"
+description: "Conditionally apply default values when other fields are present"
+---
+
+## Overview
+
+`@QFOnFilterPresent` is a conditional annotation that applies default values to a field only when specific other fields are present in the filter. This enables sophisticated filter logic where certain defaults should only apply in particular contexts.
+
+This is useful for implementing smart defaults that depend on what the user is filtering by.
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target(FIELD)
+public @interface QFOnFilterPresent
+```
+
+## Properties
+
+<ParamField path="value" type="String[]" required>
+  Array of field names that must be present for this field's default values to be applied.
+  
+  The default values from `@QFElement` will only be used if **any** of the specified fields are present in the filter.
+</ParamField>
+
+## Usage Example
+
+### Smart Minimum Filtering
+
+Apply a minimum likes threshold only when filtering by author or text:
+
+```java
+@QFDefinitionClass(PostBlog.class)
+public class PostFilterDef {
+    
+    @QFElement("author")
+    private String author;
+    
+    @QFElement("text")
+    private String text;
+    
+    // Default filter likes > 10, but ONLY if author or text is present
+    @QFOnFilterPresent(value = {"author", "text"})
+    @QFElement(
+        value = "likes", 
+        defaultValues = "10", 
+        defaultOperation = QFOperationEnum.GREATER_THAN
+    )
+    private int likes;
+}
+```
+
+**Behavior:**
+
+```bash
+# ✅ Filtering by author → likes > 10 automatically applied
+curl "/api/posts?filter=author=eq:john"
+# Equivalent to: author=eq:john AND likes=gt:10
+
+# ✅ Filtering by text → likes > 10 automatically applied  
+curl "/api/posts?filter=text=like:Spring"
+# Equivalent to: text=like:Spring AND likes=gt:10
+
+# ✅ No author or text filter → likes default NOT applied
+curl "/api/posts?filter=category=eq:tech"
+# Equivalent to: category=eq:tech (no likes filter)
+```
+
+### Context-Aware Date Ranges
+
+Apply a recent date filter only when searching by title:
+
+```java
+@QFDefinitionClass(Article.class)
+public class ArticleFilterDef {
+    
+    @QFElement("title")
+    private String title;
+    
+    @QFElement("category")
+    private String category;
+    
+    // Only apply recent date filter when searching by title
+    @QFOnFilterPresent(value = {"title"})
+    @QFDate
+    @QFElement(
+        value = "publishedDate",
+        defaultValues = "2024-01-01",
+        defaultOperation = QFOperationEnum.GREATER_EQUAL_THAN
+    )
+    private LocalDate publishedDate;
+}
+```
+
+```bash
+# ✅ Searching by title → shows only recent articles
+curl "/api/articles?filter=title=like:Spring"
+# Adds: publishedDate >= 2024-01-01
+
+# ✅ Browsing by category → shows all dates
+curl "/api/articles?filter=category=eq:tech"
+# No date restriction applied
+```
+
+### Quality Filtering for Search
+
+Apply quality thresholds when users perform text searches:
+
+```java
+@QFDefinitionClass(Product.class)
+public class ProductFilterDef {
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("description")
+    private String description;
+    
+    @QFElement("category")
+    private String category;
+    
+    // Filter out low-rated products only during text search
+    @QFOnFilterPresent(value = {"name", "description"})
+    @QFElement(
+        value = "rating",
+        defaultValues = "3.0",
+        defaultOperation = QFOperationEnum.GREATER_EQUAL_THAN
+    )
+    private Double rating;
+    
+    // Filter out inactive products only during text search
+    @QFOnFilterPresent(value = {"name", "description"})
+    @QFElement(
+        value = "isActive",
+        defaultValues = "true",
+        defaultOperation = QFOperationEnum.EQUAL
+    )
+    private Boolean isActive;
+}
+```
+
+## Multiple Condition Fields
+
+You can specify multiple fields - the default applies if **any** of them are present:
+
+```java
+@QFDefinitionClass(Event.class)
+public class EventFilterDef {
+    
+    @QFElement("location")
+    private String location;
+    
+    @QFElement("organizer")
+    private String organizer;
+    
+    @QFElement("category")
+    private String category;
+    
+    // Apply if ANY of these fields are present
+    @QFOnFilterPresent(value = {"location", "organizer", "category"})
+    @QFDate
+    @QFElement(
+        value = "eventDate",
+        defaultValues = "2024-01-01",
+        defaultOperation = QFOperationEnum.GREATER_EQUAL_THAN
+    )
+    private LocalDate eventDate;
+}
+```
+
+## How It Works
+
+The annotation works with the `@QFElement` annotation's default values:
+
+1. **Without `@QFOnFilterPresent`**: Default values are **always** applied if the field is not explicitly specified
+2. **With `@QFOnFilterPresent`**: Default values are **conditionally** applied based on the presence of other fields
+
+```java
+// Default always applied
+@QFElement(value = "status", defaultValues = "ACTIVE")
+private String status;
+
+// Default only applied when "name" is present
+@QFOnFilterPresent(value = {"name"})
+@QFElement(value = "status", defaultValues = "ACTIVE")
+private String status;
+```
+
+## Common Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Search Quality" icon="magnifying-glass">
+    Apply quality filters only during text searches
+  </Card>
+  
+  <Card title="Performance Optimization" icon="gauge-high">
+    Add indexed filter conditions when expensive filters are used
+  </Card>
+  
+  <Card title="User Experience" icon="star">
+    Provide smart defaults based on search context
+  </Card>
+  
+  <Card title="Data Freshness" icon="clock">
+    Filter recent data only for specific search types
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<Tip>
+Use `@QFOnFilterPresent` to make your API smarter by applying sensible defaults that depend on the user's search intent.
+</Tip>
+
+<Note>
+The default values are applied during filter construction. If the user explicitly sets the field, their value takes precedence over the conditional default.
+</Note>
+
+<Warning>
+Make sure the field names in the `value` array match exactly with the `@QFElement` field names (not the entity field names).
+</Warning>
+
+## Combining with Other Annotations
+
+```java
+@QFDefinitionClass(Post.class)
+public class PostFilterDef {
+    
+    @QFElement("title")
+    private String title;
+    
+    // Conditional default + required when title is present
+    @QFOnFilterPresent(value = {"title"})
+    @QFRequired(onExecution = true, onStringFilter = false)
+    @QFElement(
+        value = "status",
+        defaultValues = "PUBLISHED",
+        defaultOperation = QFOperationEnum.EQUAL
+    )
+    private String status;
+}
+```
+
+## Related Annotations
+
+- [@QFElement](/api/annotations/qf-element) - Define filterable fields with default values
+- [@QFRequired](/api/annotations/qf-required) - Mark fields as required
+- [@QFDefinitionClass](/api/annotations/qf-definition-class) - Define filter classes

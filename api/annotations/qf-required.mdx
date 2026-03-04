@@ -1,0 +1,257 @@
+---
+title: "@QFRequired"
+description: "Mark filter fields as required for query execution"
+---
+
+## Overview
+
+`@QFRequired` forces specific filter fields to be present before a query can execute. This is useful for enforcing business rules, preventing expensive unfiltered queries, or ensuring critical filters are always applied.
+
+The annotation provides fine-grained control over when a field is required: during string filter parsing, query execution, or sorting operations.
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target(FIELD)
+public @interface QFRequired
+```
+
+## Properties
+
+<ParamField path="onStringFilter" type="boolean" default="true">
+  Requires the field to be present in the filter string during parsing phase.
+  
+  If `true`, the field must appear in the query string or an exception is thrown before the filter is even constructed.
+</ParamField>
+
+<ParamField path="onExecution" type="boolean" default="true">
+  Requires the field to be present when the filter executes against the database.
+  
+  If `true`, the field must have a value when `findAll(filter)` is called, even if it was added programmatically.
+</ParamField>
+
+<ParamField path="onSort" type="boolean" default="false">
+  Requires the field to be present in the sort clause. Only applicable for `@QFElement` or `@QFSortable` fields.
+  
+  If `true`, users must sort by this field or an exception is thrown.
+</ParamField>
+
+## Usage Examples
+
+### Require Tenant Filtering
+
+Prevent queries without a tenant filter to avoid expensive full-table scans:
+
+```java
+@QFDefinitionClass(Product.class)
+public class ProductFilterDef {
+    
+    @QFRequired(onExecution = true)
+    @QFElement("tenantId")
+    private Long tenantId;
+    
+    @QFElement("name")
+    private String name;
+    
+    @QFElement("price")
+    private BigDecimal price;
+}
+```
+
+```java
+@GetMapping("/products")
+public List<Product> getProducts(
+        @QFParam(ProductFilterDef.class) QueryFilter<Product> filter,
+        @AuthenticationPrincipal User user) {
+    
+    // Set tenant automatically
+    filter.addNewField("tenantId", QFOperationEnum.EQUAL, 
+        user.getTenantId().toString());
+    
+    return repository.findAll(filter); // ✅ Required field is present
+}
+```
+
+### Require Date Range for Analytics
+
+Force users to specify a date range to prevent unbounded queries:
+
+```java
+@QFDefinitionClass(AnalyticsEvent.class)
+public class AnalyticsFilterDef {
+    
+    @QFRequired(onStringFilter = true)
+    @QFDate
+    @QFElement("eventDate")
+    private LocalDate eventDate;
+    
+    @QFElement("eventType")
+    private String eventType;
+}
+```
+
+```bash
+# ✅ Valid - date range provided
+curl "http://localhost:8080/api/analytics?filter=eventDate=gte:2024-01-01&eventDate=lte:2024-01-31"
+
+# ❌ Invalid - throws QFRequiredException
+curl "http://localhost:8080/api/analytics?filter=eventType=eq:click"
+```
+
+### Require Sorting for Paginated Results
+
+Enforce consistent ordering for paginated endpoints:
+
+```java
+@QFDefinitionClass(Order.class)
+public class OrderFilterDef {
+    
+    @QFRequired(onSort = true)
+    @QFElement("orderDate")
+    private LocalDateTime orderDate;
+    
+    @QFElement("customerId")
+    private Long customerId;
+    
+    @QFElement("status")
+    private OrderStatus status;
+}
+```
+
+```bash
+# ✅ Valid - sorting by required field
+curl "http://localhost:8080/api/orders?filter=status=eq:PENDING&sort=-orderDate"
+
+# ❌ Invalid - no sort specified, throws QFRequiredException
+curl "http://localhost:8080/api/orders?filter=status=eq:PENDING"
+```
+
+## Requirement Phases
+
+<Tabs>
+  <Tab title="onStringFilter">
+    **When:** During filter string parsing (earliest phase)
+    
+    **Use for:** Ensuring users always provide specific filters in the query string
+    
+    **Throws:** `QFRequiredException` during filter construction if missing
+    
+    ```java
+    @QFRequired(onStringFilter = true)
+    @QFElement("organizationId")
+    private Long organizationId;
+    ```
+  </Tab>
+  
+  <Tab title="onExecution">
+    **When:** During query execution (after filter construction)
+    
+    **Use for:** Enforcing fields that can be added programmatically but must be present at runtime
+    
+    **Throws:** `QFRequiredException` when `repository.findAll(filter)` is called
+    
+    ```java
+    @QFRequired(onExecution = true, onStringFilter = false)
+    @QFElement("tenantId")
+    private Long tenantId;
+    ```
+  </Tab>
+  
+  <Tab title="onSort">
+    **When:** During query execution (if field is sortable)
+    
+    **Use for:** Ensuring consistent ordering for pagination or business rules
+    
+    **Throws:** `QFRequiredException` if sort clause doesn't include this field
+    
+    ```java
+    @QFRequired(onSort = true)
+    @QFElement("createdAt")
+    private LocalDateTime createdAt;
+    ```
+  </Tab>
+</Tabs>
+
+## Combining Requirements
+
+You can combine multiple requirement types:
+
+```java
+@QFDefinitionClass(Transaction.class)
+public class TransactionFilterDef {
+    
+    // Must be in query string AND present at execution
+    @QFRequired(onStringFilter = true, onExecution = true)
+    @QFDate
+    @QFElement("transactionDate")
+    private LocalDate transactionDate;
+    
+    // Only required at execution (can be added programmatically)
+    @QFRequired(onStringFilter = false, onExecution = true)
+    @QFElement("accountId")
+    private Long accountId;
+    
+    // Must be sorted by this field
+    @QFRequired(onSort = true)
+    @QFElement("createdAt")
+    private LocalDateTime createdAt;
+}
+```
+
+## Error Handling
+
+When a required field is missing, `QFRequiredException` is thrown:
+
+```java
+try {
+    List<Product> products = repository.findAll(filter);
+} catch (QFRequiredException e) {
+    // Handle missing required field
+    String missingField = e.getField();
+    return ResponseEntity
+        .badRequest()
+        .body("Required filter field missing: " + missingField);
+}
+```
+
+## Common Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Multi-Tenancy" icon="building">
+    Ensure tenant isolation by requiring tenant filters
+  </Card>
+  
+  <Card title="Date Range Queries" icon="calendar-range">
+    Prevent unbounded date queries on large datasets
+  </Card>
+  
+  <Card title="Performance Protection" icon="gauge-high">
+    Block expensive full-table scans by requiring indexed filters
+  </Card>
+  
+  <Card title="Consistent Pagination" icon="bars-staggered">
+    Enforce deterministic ordering for paginated results
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<Tip>
+Use `onExecution = true, onStringFilter = false` when you want to add filters programmatically in the controller (e.g., for tenant isolation) while allowing users to optionally include them in the query string.
+</Tip>
+
+<Warning>
+Be careful with `onStringFilter = true` for fields users might not know about. It's better to use `onExecution` and add the field programmatically in such cases.
+</Warning>
+
+<Note>
+The `onSort` requirement only applies to fields that are also marked with `@QFElement` or `@QFSortable`. It checks whether the sort clause includes the field, not whether the field is filterable.
+</Note>
+
+## Related Annotations
+
+- [@QFElement](/api/annotations/qf-element) - Define filterable fields
+- [@QFSortable](/api/annotations/qf-sortable) - Mark fields as sortable
+- [@QFBlockParsing](/api/annotations/qf-block-parsing) - Block fields from query string parsing

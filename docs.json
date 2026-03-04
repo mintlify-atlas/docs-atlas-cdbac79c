@@ -90,7 +90,10 @@
               "api/annotations/qf-collection-element",
               "api/annotations/qf-discriminator",
               "api/annotations/qf-sortable",
-              "api/annotations/qf-predicate"
+              "api/annotations/qf-predicate",
+              "api/annotations/qf-block-parsing",
+              "api/annotations/qf-required",
+              "api/annotations/qf-on-filter-present"
             ]
           },
           {

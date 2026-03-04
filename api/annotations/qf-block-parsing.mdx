@@ -1,0 +1,142 @@
+---
+title: "@QFBlockParsing"
+description: "Block fields from being parsed in query strings for security"
+---
+
+## Overview
+
+`@QFBlockParsing` is a security annotation that prevents a field from being parsed from incoming query strings. This is essential for protecting sensitive fields like administrator roles or internal flags that should only be set programmatically.
+
+Fields annotated with `@QFBlockParsing` can still be used in filters, but only through programmatic access using the `QueryFilter` methods after construction.
+
+## Annotation Signature
+
+```java
+@Documented
+@Retention(RUNTIME)
+@Target(FIELD)
+public @interface QFBlockParsing
+```
+
+## Properties
+
+This annotation has no properties. Simply apply it to a field to block parsing.
+
+## Usage Example
+
+### Protect Admin Fields
+
+```java
+@QFDefinitionClass(User.class)
+public class UserFilterDef {
+    
+    @QFElement("username")
+    private String username;
+    
+    @QFElement("email")
+    private String email;
+    
+    // This field cannot be set from query strings
+    @QFBlockParsing
+    @QFElement("isAdmin")
+    private Boolean isAdmin;
+    
+    // This field also blocked from parsing
+    @QFBlockParsing
+    @QFElement("internalRole")
+    private String internalRole;
+}
+```
+
+### Controller Usage
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    
+    @Autowired
+    private UserRepository repository;
+    
+    @GetMapping
+    public List<User> getUsers(
+            @QFParam(UserFilterDef.class) QueryFilter<User> filter,
+            Authentication auth) {
+        
+        // Admin users can filter by admin status programmatically
+        if (hasRole(auth, "ADMIN")) {
+            filter.addNewField("isAdmin", QFOperationEnum.EQUAL, "true");
+        }
+        
+        return repository.findAll(filter);
+    }
+}
+```
+
+## Common Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Administrator Fields" icon="shield-halved">
+    Block fields that should only be accessible to administrators
+  </Card>
+  
+  <Card title="Internal Flags" icon="flag">
+    Prevent users from directly filtering by internal status flags
+  </Card>
+  
+  <Card title="Role-Based Filters" icon="users">
+    Control access to sensitive filter criteria based on user roles
+  </Card>
+  
+  <Card title="Security Policies" icon="lock">
+    Enforce security policies by preventing direct query manipulation
+  </Card>
+</CardGroup>
+
+## Security Best Practices
+
+<Warning>
+Always use `@QFBlockParsing` for fields that contain:
+- Administrative privileges
+- Internal system flags
+- User role assignments
+- Sensitive business logic flags
+- Any field that should not be directly controlled by end users
+</Warning>
+
+<Tip>
+Combine `@QFBlockParsing` with programmatic filtering in your controller to implement role-based access control for filter operations.
+</Tip>
+
+## Programmatic Access
+
+After blocking parsing, you can still add these fields programmatically:
+
+```java
+// Add field with single value
+filter.addNewField("isAdmin", QFOperationEnum.EQUAL, "true");
+
+// Add field with multiple values
+filter.addNewField("internalRole", QFOperationEnum.IN, 
+    Arrays.asList("SYSTEM", "SUPER_ADMIN"));
+
+// Override existing values
+filter.overrideField("isAdmin", QFOperationEnum.EQUAL, "false");
+```
+
+## Error Handling
+
+If a user attempts to set a blocked field via query string:
+
+```bash
+# This will throw QFBlockException
+curl "http://localhost:8080/api/users?filter=isAdmin=eq:true"
+```
+
+The framework will throw `QFBlockException` with a message indicating the field is blocked.
+
+## Related Annotations
+
+- [@QFElement](/api/annotations/qf-element) - Define filterable fields
+- [@QFRequired](/api/annotations/qf-required) - Mark fields as required
+- [QueryFilter](/api/query-filter) - Programmatic filter manipulation
