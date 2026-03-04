@@ -1,0 +1,130 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "QueryFilterJPA",
+  "projectDescription": "Automatic query filter with RHS Colon and LHS Brackets standard for Spring Boot JPA",
+  "theme": "palm",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/filter-definitions",
+              "concepts/query-syntax",
+              "concepts/operations"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/basic-filtering",
+              "guides/qfparam-vs-qfmultiparam",
+              "guides/sorting",
+              "guides/custom-predicates",
+              "guides/spel-expressions",
+              "guides/postgresql-arrays",
+              "guides/json-filtering"
+            ]
+          },
+          {
+            "group": "OpenAPI Integration",
+            "pages": [
+              "openapi/overview",
+              "openapi/swagger-ui"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/discriminators",
+              "advanced/collections",
+              "advanced/subqueries",
+              "advanced/custom-converters"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Annotations",
+            "pages": [
+              "api/annotations/enable-query-filter",
+              "api/annotations/qf-definition-class",
+              "api/annotations/qf-element",
+              "api/annotations/qf-param",
+              "api/annotations/qf-multi-param",
+              "api/annotations/qf-date",
+              "api/annotations/qf-json-element",
+              "api/annotations/qf-collection-element",
+              "api/annotations/qf-discriminator",
+              "api/annotations/qf-sortable",
+              "api/annotations/qf-predicate"
+            ]
+          },
+          {
+            "group": "Core Classes",
+            "pages": [
+              "api/query-filter",
+              "api/qf-param-type",
+              "api/operations"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/spring-boot-3",
+              "examples/spring-boot-4",
+              "examples/common-patterns"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Annotation-based filter definitions with @QFDefinitionClass and @QFElement",
+    "RHS Colon (field=eq:value) and LHS Brackets (field[eq]=value) syntax support",
+    "Automatic OpenAPI/Swagger documentation generation",
+    "PostgreSQL array and JSON field filtering",
+    "Sorting with multiple fields and directions",
+    "Custom predicates with SpEL expressions",
+    "Collection size filtering operations",
+    "Support for both Spring Boot 3 and Spring Boot 4",
+    "Seamless integration with JpaSpecificationExecutor",
+    "@QFMultiParam for binding multiple filter parameters"
+  ],
+  "publicApiSurface": [
+    "@EnableQueryFilter",
+    "@QFDefinitionClass",
+    "@QFElement",
+    "@QFParam",
+    "@QFMultiParam",
+    "@QFDate",
+    "@QFJsonElement",
+    "@QFCollectionElement",
+    "@QFDiscriminator",
+    "@QFSortable",
+    "@QFPredicate",
+    "QueryFilter<E>",
+    "QFParamType",
+    "QFOperationEnum",
+    "QFOperationJsonEnum",
+    "QFCollectionOperationEnum",
+    "QFOperationDiscriminatorEnum"
+  ]
+}
